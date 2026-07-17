@@ -105,11 +105,15 @@ class AppStore extends ChangeNotifier {
   static const _favoritesKey = 'maqadi_favorites_v25';
   static const _frequencyKey = 'maqadi_frequency_v25';
   static const _lastListKey = 'maqadi_last_list_v25';
+  static const _themeKey = 'maqadi_theme_v25';
+  static const _fontScaleKey = 'maqadi_font_scale_v25';
 
   final List<ShoppingListModel> lists = [];
   final Set<String> favorites = {};
   final Map<String, int> frequency = {};
   String? lastListId;
+  ThemeMode themeMode = ThemeMode.system;
+  double fontScale = 1.0;
   bool isReady = false;
   Timer? _saveTimer;
   int _idCounter = 0;
@@ -165,6 +169,13 @@ class AppStore extends ChangeNotifier {
       frequency.clear();
     }
     lastListId = prefs.getString(_lastListKey);
+    final savedTheme = prefs.getString(_themeKey);
+    themeMode = savedTheme == 'dark'
+        ? ThemeMode.dark
+        : savedTheme == 'light'
+            ? ThemeMode.light
+            : ThemeMode.system;
+    fontScale = (prefs.getDouble(_fontScaleKey) ?? 1.0).clamp(0.9, 1.25).toDouble();
 
     if (lists.isEmpty) {
       lists.add(ShoppingListModel(
@@ -196,6 +207,8 @@ class AppStore extends ChangeNotifier {
     } else {
       await prefs.remove(_lastListKey);
     }
+    await prefs.setString(_themeKey, themeMode.name);
+    await prefs.setDouble(_fontScaleKey, fontScale);
   }
 
   void scheduleSave() {
@@ -368,7 +381,30 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
     scheduleSave();
   }
+
+  int get totalTrips => lists.where((list) => list.items.isNotEmpty).length;
+  int get totalItems => lists.fold(0, (sum, list) => sum + list.items.length);
+  int get completedItems => lists.fold(0, (sum, list) => sum + list.completedCount);
+  double get averageItemsPerTrip => totalTrips == 0 ? 0 : totalItems / totalTrips;
+
+  List<MapEntry<String, int>> get mostUsedProducts {
+    final entries = frequency.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    return entries.take(20).toList();
+  }
+
+  void setThemeMode(ThemeMode mode) {
+    themeMode = mode;
+    notifyListeners();
+    scheduleSave();
+  }
+
+  void setFontScale(double value) {
+    fontScale = value.clamp(0.9, 1.25).toDouble();
+    notifyListeners();
+    scheduleSave();
+  }
 }
+
 
 class MaqadiApp extends StatefulWidget {
   const MaqadiApp({super.key});
@@ -379,7 +415,6 @@ class MaqadiApp extends StatefulWidget {
 
 class _MaqadiAppState extends State<MaqadiApp> {
   final AppStore store = AppStore();
-  ThemeMode themeMode = ThemeMode.system;
 
   @override
   void initState() {
@@ -393,7 +428,7 @@ class _MaqadiAppState extends State<MaqadiApp> {
         builder: (context, _) => MaterialApp(
           debugShowCheckedModeBanner: false,
           title: 'مقاضي',
-          themeMode: themeMode,
+          themeMode: store.themeMode,
           theme: ThemeData(
             useMaterial3: true,
             colorSchemeSeed: const Color(0xFF2E7D32),
@@ -406,14 +441,18 @@ class _MaqadiAppState extends State<MaqadiApp> {
               brightness: Brightness.dark,
             ),
           ),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(store.fontScale)),
+            child: child!,
+          ),
           home: Directionality(
             textDirection: TextDirection.rtl,
             child: store.isReady
                 ? HomeScreen(
                     store: store,
-                    onToggleTheme: () => setState(() {
-                      themeMode = themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-                    }),
+                    onToggleTheme: () => store.setThemeMode(
+                      store.themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark,
+                    ),
                   )
                 : const Scaffold(body: Center(child: CircularProgressIndicator())),
           ),
@@ -498,6 +537,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('مقاضي', style: TextStyle(fontWeight: FontWeight.w900)),
         actions: [
+          IconButton(
+            tooltip: 'الإعدادات',
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Directionality(textDirection: TextDirection.rtl, child: SettingsScreen(store: widget.store)))),
+            icon: const Icon(Icons.settings_outlined),
+          ),
           IconButton(onPressed: widget.onToggleTheme, icon: const Icon(Icons.dark_mode_outlined)),
         ],
       ),
@@ -564,6 +608,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: Icons.star_outline,
                   title: 'المفضلة',
                   subtitle: '${widget.store.favorites.length} منتج',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Directionality(textDirection: TextDirection.rtl, child: FavoritesScreen(store: widget.store)))),
                 ),
               ),
               const SizedBox(width: 10),
@@ -572,6 +617,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: Icons.bar_chart_outlined,
                   title: 'الإحصائيات',
                   subtitle: '${widget.store.lists.length} قائمة',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Directionality(textDirection: TextDirection.rtl, child: StatisticsScreen(store: widget.store)))),
                 ),
               ),
             ],
@@ -648,15 +694,19 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _QuickCard extends StatelessWidget {
-  const _QuickCard({required this.icon, required this.title, required this.subtitle});
+  const _QuickCard({required this.icon, required this.title, required this.subtitle, required this.onTap});
 
   final IconData icon;
   final String title;
   final String subtitle;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -667,6 +717,144 @@ class _QuickCard extends StatelessWidget {
               Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
+        ),
+      ),
+      );
+}
+
+
+class FavoritesScreen extends StatelessWidget {
+  const FavoritesScreen({super.key, required this.store});
+  final AppStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    final names = store.favorites.toList()..sort();
+    return Scaffold(
+      appBar: AppBar(title: const Text('المفضلة', style: TextStyle(fontWeight: FontWeight.w900))),
+      body: names.isEmpty
+          ? const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.star_border, size: 64), SizedBox(height: 12), Text('لا توجد منتجات مفضلة بعد')]))
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: names.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, index) => Card(
+                child: ListTile(
+                  leading: const Icon(Icons.star),
+                  title: Text(names[index], style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(store.categoryFor(names[index])),
+                  trailing: IconButton(
+                    tooltip: 'إزالة من المفضلة',
+                    onPressed: () => store.toggleFavorite(names[index]),
+                    icon: const Icon(Icons.remove_circle_outline),
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+class StatisticsScreen extends StatelessWidget {
+  const StatisticsScreen({super.key, required this.store});
+  final AppStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = store.mostUsedProducts;
+    return Scaffold(
+      appBar: AppBar(title: const Text('الإحصائيات', style: TextStyle(fontWeight: FontWeight.w900))),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          LayoutBuilder(builder: (context, constraints) {
+            final width = constraints.maxWidth > 600 ? (constraints.maxWidth - 24) / 4 : (constraints.maxWidth - 12) / 2;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _StatCard(width: width, icon: Icons.shopping_bag_outlined, label: 'رحلات التسوق', value: '${store.totalTrips}'),
+                _StatCard(width: width, icon: Icons.check_circle_outline, label: 'أغراض مكتملة', value: '${store.completedItems}'),
+                _StatCard(width: width, icon: Icons.list_alt, label: 'إجمالي الأغراض', value: '${store.totalItems}'),
+                _StatCard(width: width, icon: Icons.calculate_outlined, label: 'متوسط الرحلة', value: store.averageItemsPerTrip.toStringAsFixed(1)),
+              ],
+            );
+          }),
+          const SizedBox(height: 24),
+          const Text('الأكثر إضافة', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+          if (top.isEmpty) const Card(child: Padding(padding: EdgeInsets.all(20), child: Text('ستظهر الإحصائيات بعد استخدام التطبيق'))),
+          for (var i = 0; i < top.length; i++)
+            Card(
+              child: ListTile(
+                leading: CircleAvatar(child: Text('${i + 1}')),
+                title: Text(top[i].key, style: const TextStyle(fontWeight: FontWeight.w700)),
+                trailing: Text('${top[i].value} مرة'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  const _StatCard({required this.width, required this.icon, required this.label, required this.value});
+  final double width;
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: width,
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(icon),
+              const SizedBox(height: 16),
+              Text(value, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
+              Text(label),
+            ]),
+          ),
+        ),
+      );
+}
+
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key, required this.store});
+  final AppStore store;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('الإعدادات', style: TextStyle(fontWeight: FontWeight.w900))),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text('المظهر', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            Card(
+              child: Column(children: [
+                RadioListTile<ThemeMode>(value: ThemeMode.system, groupValue: store.themeMode, onChanged: (v) => store.setThemeMode(v!), title: const Text('حسب إعداد الجهاز')),
+                RadioListTile<ThemeMode>(value: ThemeMode.light, groupValue: store.themeMode, onChanged: (v) => store.setThemeMode(v!), title: const Text('فاتح')),
+                RadioListTile<ThemeMode>(value: ThemeMode.dark, groupValue: store.themeMode, onChanged: (v) => store.setThemeMode(v!), title: const Text('داكن')),
+              ]),
+            ),
+            const SizedBox(height: 20),
+            const Text('حجم النص', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(children: [
+                  Slider(value: store.fontScale, min: 0.9, max: 1.25, divisions: 7, label: '${(store.fontScale * 100).round()}٪', onChanged: store.setFontScale),
+                  Text('نص تجريبي بحجم ${(store.fontScale * 100).round()}٪', style: const TextStyle(fontWeight: FontWeight.w700)),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Card(child: ListTile(leading: Icon(Icons.info_outline), title: Text('مقاضي Sprint 2.5 — المرحلة الثالثة'), subtitle: Text('تحسينات الواجهة، الإحصائيات، المفضلة والإعدادات'))),
+          ],
         ),
       );
 }
@@ -805,7 +993,11 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  LinearProgressIndicator(value: widget.list.progress, minHeight: 12, borderRadius: BorderRadius.circular(20)),
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: widget.list.progress),
+                    duration: const Duration(milliseconds: 350),
+                    builder: (_, value, __) => LinearProgressIndicator(value: value, minHeight: 12, borderRadius: BorderRadius.circular(20)),
+                  ),
                   const SizedBox(height: 8),
                   Text('تم ${widget.list.completedCount} • المتبقي ${widget.list.remainingCount}'),
                 ],
@@ -922,7 +1114,10 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
             ...entry.value.map(
               (item) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Card(
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 220),
+                  opacity: item.done ? 0.62 : 1,
+                  child: Card(
                   child: ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     leading: Checkbox(
@@ -997,6 +1192,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                         const PopupMenuItem(value: 'delete', child: Text('حذف')),
                       ],
                     ),
+                  ),
                   ),
                 ),
               ),
