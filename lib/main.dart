@@ -55,6 +55,49 @@ class GroceryItem {
       );
 }
 
+
+class PantryItem {
+  PantryItem({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.quantity,
+    required this.minimum,
+    required this.unit,
+    required this.location,
+  });
+
+  final String id;
+  String name;
+  String category;
+  double quantity;
+  double minimum;
+  String unit;
+  String location;
+
+  bool get isLow => quantity <= minimum;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'category': category,
+        'quantity': quantity,
+        'minimum': minimum,
+        'unit': unit,
+        'location': location,
+      };
+
+  factory PantryItem.fromJson(Map<String, dynamic> json) => PantryItem(
+        id: json['id'] as String? ?? DateTime.now().microsecondsSinceEpoch.toString(),
+        name: json['name'] as String? ?? '',
+        category: json['category'] as String? ?? 'أخرى',
+        quantity: (json['quantity'] as num?)?.toDouble() ?? 0,
+        minimum: (json['minimum'] as num?)?.toDouble() ?? 1,
+        unit: json['unit'] as String? ?? 'حبة',
+        location: json['location'] as String? ?? 'المخزن',
+      );
+}
+
 class ShoppingListModel {
   ShoppingListModel({
     required this.id,
@@ -107,10 +150,12 @@ class AppStore extends ChangeNotifier {
   static const _lastListKey = 'maqadi_last_list_v25';
   static const _themeKey = 'maqadi_theme_v25';
   static const _fontScaleKey = 'maqadi_font_scale_v25';
+  static const _pantryKey = 'maqadi_pantry_v26';
 
   final List<ShoppingListModel> lists = [];
   final Set<String> favorites = {};
   final Map<String, int> frequency = {};
+  final List<PantryItem> pantry = [];
   String? lastListId;
   ThemeMode themeMode = ThemeMode.system;
   double fontScale = 1.0;
@@ -142,6 +187,7 @@ class AppStore extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final rawLists = prefs.getString(_listsKey);
     final rawFrequency = prefs.getString(_frequencyKey);
+    final rawPantry = prefs.getString(_pantryKey);
 
     try {
       if (rawLists != null) {
@@ -167,6 +213,18 @@ class AppStore extends ChangeNotifier {
       }
     } catch (_) {
       frequency.clear();
+    }
+    try {
+      if (rawPantry != null) {
+        final decoded = jsonDecode(rawPantry);
+        if (decoded is List) {
+          pantry.addAll(decoded.whereType<Map>().map(
+                (item) => PantryItem.fromJson(Map<String, dynamic>.from(item)),
+              ));
+        }
+      }
+    } catch (_) {
+      pantry.clear();
     }
     lastListId = prefs.getString(_lastListKey);
     final savedTheme = prefs.getString(_themeKey);
@@ -209,6 +267,7 @@ class AppStore extends ChangeNotifier {
     }
     await prefs.setString(_themeKey, themeMode.name);
     await prefs.setDouble(_fontScaleKey, fontScale);
+    await prefs.setString(_pantryKey, jsonEncode(pantry.map((item) => item.toJson()).toList()));
   }
 
   void scheduleSave() {
@@ -390,6 +449,77 @@ class AppStore extends ChangeNotifier {
   List<MapEntry<String, int>> get mostUsedProducts {
     final entries = frequency.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     return entries.take(20).toList();
+  }
+
+
+  List<PantryItem> get lowStockItems {
+    final result = pantry.where((item) => item.isLow).toList();
+    result.sort((a, b) => a.name.compareTo(b.name));
+    return result;
+  }
+
+  void addPantryItem({
+    required String name,
+    required double quantity,
+    required double minimum,
+    required String unit,
+    required String location,
+  }) {
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) return;
+    final existing = pantry.where((item) => normalizeArabic(item.name) == normalizeArabic(cleanName)).toList();
+    if (existing.isNotEmpty) {
+      existing.first.quantity += quantity;
+      existing.first.minimum = minimum;
+      existing.first.unit = unit;
+      existing.first.location = location;
+    } else {
+      pantry.add(PantryItem(
+        id: _newId(),
+        name: exactProduct(cleanName)?.name ?? cleanName,
+        category: categoryFor(cleanName),
+        quantity: quantity,
+        minimum: minimum,
+        unit: unit,
+        location: location,
+      ));
+    }
+    notifyListeners();
+    scheduleSave();
+  }
+
+  void updatePantryItem(PantryItem item) {
+    notifyListeners();
+    scheduleSave();
+  }
+
+  void changePantryQuantity(PantryItem item, double delta) {
+    item.quantity = (item.quantity + delta).clamp(0, 999999).toDouble();
+    updatePantryItem(item);
+  }
+
+  void deletePantryItem(PantryItem item) {
+    pantry.remove(item);
+    notifyListeners();
+    scheduleSave();
+  }
+
+  void addLowStockToList(ShoppingListModel list) {
+    for (final item in lowStockItems) {
+      final needed = (item.minimum - item.quantity).ceil().clamp(1, 999);
+      final existing = list.items.where((g) => normalizeArabic(g.name) == normalizeArabic(item.name)).toList();
+      if (existing.isEmpty) {
+        list.items.add(GroceryItem(
+          id: _newId(),
+          name: item.name,
+          category: item.category,
+          quantity: needed,
+        ));
+      }
+    }
+    list.updatedAt = DateTime.now();
+    notifyListeners();
+    scheduleSave();
   }
 
   void setThemeMode(ThemeMode mode) {
@@ -622,6 +752,21 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          _QuickCard(
+            icon: Icons.inventory_2_outlined,
+            title: 'مخزن المنزل',
+            subtitle: '${widget.store.pantry.length} منتج • ${widget.store.lowStockItems.length} منخفض',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: PantryScreen(store: widget.store),
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: 22),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -722,6 +867,205 @@ class _QuickCard extends StatelessWidget {
       );
 }
 
+
+
+class PantryScreen extends StatefulWidget {
+  const PantryScreen({super.key, required this.store});
+  final AppStore store;
+
+  @override
+  State<PantryScreen> createState() => _PantryScreenState();
+}
+
+class _PantryScreenState extends State<PantryScreen> {
+  String query = '';
+  String location = 'الكل';
+  bool lowOnly = false;
+
+  Future<void> _showEditor([PantryItem? item]) async {
+    final name = TextEditingController(text: item?.name ?? '');
+    final quantity = TextEditingController(text: item == null ? '1' : _format(item.quantity));
+    final minimum = TextEditingController(text: item == null ? '1' : _format(item.minimum));
+    String unit = item?.unit ?? 'حبة';
+    String place = item?.location ?? 'المخزن';
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(item == null ? 'إضافة للمخزن' : 'تعديل المنتج', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 16),
+                TextField(controller: name, autofocus: item == null, decoration: const InputDecoration(labelText: 'اسم المنتج', prefixIcon: Icon(Icons.search))),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: TextField(controller: quantity, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الكمية الحالية'))),
+                  const SizedBox(width: 10),
+                  Expanded(child: TextField(controller: minimum, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الحد الأدنى'))),
+                ]),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: unit,
+                  decoration: const InputDecoration(labelText: 'الوحدة'),
+                  items: const ['حبة', 'عبوة', 'كرتون', 'كجم', 'جرام', 'لتر', 'مل', 'كيس', 'علبة'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                  onChanged: (v) => setSheetState(() => unit = v ?? unit),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: place,
+                  decoration: const InputDecoration(labelText: 'مكان التخزين'),
+                  items: const ['المخزن', 'الثلاجة', 'الفريزر', 'التنظيف', 'الأطفال'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                  onChanged: (v) => setSheetState(() => place = v ?? place),
+                ),
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(context, true),
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('حفظ'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (result != true) return;
+    final q = double.tryParse(quantity.text.replaceAll(',', '.')) ?? 0;
+    final m = double.tryParse(minimum.text.replaceAll(',', '.')) ?? 0;
+    if (item == null) {
+      widget.store.addPantryItem(name: name.text, quantity: q, minimum: m, unit: unit, location: place);
+    } else {
+      item.name = name.text.trim().isEmpty ? item.name : name.text.trim();
+      item.category = widget.store.categoryFor(item.name);
+      item.quantity = q.clamp(0, 999999).toDouble();
+      item.minimum = m.clamp(0, 999999).toDouble();
+      item.unit = unit;
+      item.location = place;
+      widget.store.updatePantryItem(item);
+    }
+  }
+
+  String _format(double value) => value == value.roundToDouble() ? value.toInt().toString() : value.toStringAsFixed(1);
+
+  Future<void> _addLowToList() async {
+    if (widget.store.lowStockItems.isEmpty) return;
+    final active = widget.store.activeLists;
+    ShoppingListModel? selected = widget.store.lastList;
+    final result = await showDialog<ShoppingListModel>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('إضافة الناقص إلى قائمة'),
+        content: active.isEmpty
+            ? const Text('لا توجد قائمة نشطة. أنشئ قائمة أولاً من الصفحة الرئيسية.')
+            : SizedBox(
+                width: double.maxFinite,
+                child: ListView(shrinkWrap: true, children: active.map((list) => RadioListTile<ShoppingListModel>(value: list, groupValue: selected, title: Text(list.name), onChanged: (v) => Navigator.pop(context, v))).toList()),
+              ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء'))],
+      ),
+    );
+    if (result != null) {
+      widget.store.addLowStockToList(result);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تمت إضافة المنتجات الناقصة إلى ${result.name}')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allLocations = ['الكل', ...{for (final item in widget.store.pantry) item.location}];
+    final items = widget.store.pantry.where((item) {
+      final matchesQuery = normalizeArabic(item.name).contains(normalizeArabic(query));
+      final matchesLocation = location == 'الكل' || item.location == location;
+      return matchesQuery && matchesLocation && (!lowOnly || item.isLow);
+    }).toList()
+      ..sort((a, b) {
+        if (a.isLow != b.isLow) return a.isLow ? -1 : 1;
+        return a.name.compareTo(b.name);
+      });
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('مخزن المنزل', style: TextStyle(fontWeight: FontWeight.w900)),
+        actions: [
+          IconButton(tooltip: 'إضافة الناقص للقائمة', onPressed: widget.store.lowStockItems.isEmpty ? null : _addLowToList, icon: const Icon(Icons.playlist_add)),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(onPressed: () => _showEditor(), icon: const Icon(Icons.add), label: const Text('إضافة منتج')),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Column(children: [
+              Row(children: [
+                Expanded(child: _PantrySummary(icon: Icons.inventory_2_outlined, label: 'المنتجات', value: '${widget.store.pantry.length}')),
+                const SizedBox(width: 10),
+                Expanded(child: _PantrySummary(icon: Icons.warning_amber_rounded, label: 'منخفض', value: '${widget.store.lowStockItems.length}')),
+              ]),
+              const SizedBox(height: 12),
+              TextField(onChanged: (v) => setState(() => query = v), decoration: const InputDecoration(hintText: 'ابحث في المخزن', prefixIcon: Icon(Icons.search), border: OutlineInputBorder())),
+              const SizedBox(height: 10),
+              SizedBox(height: 40, child: ListView.separated(scrollDirection: Axis.horizontal, itemCount: allLocations.length + 1, separatorBuilder: (_, __) => const SizedBox(width: 8), itemBuilder: (_, index) {
+                if (index == 0) return FilterChip(selected: lowOnly, label: const Text('الناقص فقط'), avatar: const Icon(Icons.warning_amber_rounded, size: 18), onSelected: (v) => setState(() => lowOnly = v));
+                final value = allLocations[index - 1];
+                return ChoiceChip(selected: location == value, label: Text(value), onSelected: (_) => setState(() => location = value));
+              })),
+            ]),
+          ),
+          Expanded(
+            child: items.isEmpty
+                ? const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.inventory_2_outlined, size: 68), SizedBox(height: 12), Text('لا توجد منتجات مطابقة'), SizedBox(height: 4), Text('أضف أول منتج إلى مخزن المنزل')]))
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (_, index) {
+                      final item = items[index];
+                      return Card(
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () => _showEditor(item),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Row(children: [
+                              CircleAvatar(backgroundColor: item.isLow ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.primaryContainer, child: Icon(item.isLow ? Icons.warning_amber_rounded : Icons.inventory_2_outlined)),
+                              const SizedBox(width: 12),
+                              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                Row(children: [Expanded(child: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))), if (item.isLow) const Text('منخفض', style: TextStyle(fontWeight: FontWeight.w800))]),
+                                const SizedBox(height: 4),
+                                Text('${item.location} • الحد الأدنى ${_format(item.minimum)} ${item.unit}', style: Theme.of(context).textTheme.bodySmall),
+                              ])),
+                              IconButton(onPressed: () => widget.store.changePantryQuantity(item, -1), icon: const Icon(Icons.remove_circle_outline)),
+                              Text('${_format(item.quantity)}\n${item.unit}', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w900)),
+                              IconButton(onPressed: () => widget.store.changePantryQuantity(item, 1), icon: const Icon(Icons.add_circle_outline)),
+                              PopupMenuButton<String>(onSelected: (v) { if (v == 'edit') _showEditor(item); if (v == 'delete') widget.store.deletePantryItem(item); }, itemBuilder: (_) => const [PopupMenuItem(value: 'edit', child: Text('تعديل')), PopupMenuItem(value: 'delete', child: Text('حذف'))]),
+                            ]),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PantrySummary extends StatelessWidget {
+  const _PantrySummary({required this.icon, required this.label, required this.value});
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Card(child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [Icon(icon), const SizedBox(width: 10), Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)), Text(label)])])));
+}
 
 class FavoritesScreen extends StatelessWidget {
   const FavoritesScreen({super.key, required this.store});
