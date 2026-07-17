@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -9,10 +10,18 @@ void main() => runApp(const MaqadiApp());
 
 String normalizeArabic(String value) => value
     .toLowerCase()
+    .replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '')
     .replaceAll(RegExp('[أإآ]'), 'ا')
+    .replaceAll('ؤ', 'و')
+    .replaceAll('ئ', 'ي')
     .replaceAll('ة', 'ه')
     .replaceAll('ى', 'ي')
+    .replaceAll(RegExp(r'[^\u0621-\u064A0-9 ]'), ' ')
+    .replaceAll(RegExp(r'\s+'), ' ')
     .trim();
+
+List<String> searchTokens(String value) =>
+    normalizeArabic(value).split(' ').where((token) => token.isNotEmpty).toList();
 
 class GroceryItem {
   GroceryItem({
@@ -102,6 +111,8 @@ class AppStore extends ChangeNotifier {
   final Map<String, int> frequency = {};
   String? lastListId;
   bool isReady = false;
+  Timer? _saveTimer;
+  int _idCounter = 0;
 
   List<ShoppingListModel> get activeLists {
     final result = lists.where((list) => !list.archived).toList();
@@ -128,14 +139,30 @@ class AppStore extends ChangeNotifier {
     final rawLists = prefs.getString(_listsKey);
     final rawFrequency = prefs.getString(_frequencyKey);
 
-    if (rawLists != null) {
-      lists.addAll((jsonDecode(rawLists) as List)
-          .map((item) => ShoppingListModel.fromJson(Map<String, dynamic>.from(item as Map))));
+    try {
+      if (rawLists != null) {
+        final decoded = jsonDecode(rawLists);
+        if (decoded is List) {
+          lists.addAll(decoded.whereType<Map>().map(
+                (item) => ShoppingListModel.fromJson(Map<String, dynamic>.from(item)),
+              ));
+        }
+      }
+    } catch (_) {
+      // نبدأ بقائمة سليمة بدل تعطّل التطبيق إذا تلفت البيانات المحلية.
     }
     favorites.addAll(prefs.getStringList(_favoritesKey) ?? const []);
-    if (rawFrequency != null) {
-      frequency.addAll(Map<String, dynamic>.from(jsonDecode(rawFrequency) as Map)
-          .map((key, value) => MapEntry(key, value as int)));
+    try {
+      if (rawFrequency != null) {
+        final decoded = jsonDecode(rawFrequency);
+        if (decoded is Map) {
+          frequency.addAll(Map<String, dynamic>.from(decoded).map(
+            (key, value) => MapEntry(key, value is int ? value : 0),
+          ));
+        }
+      }
+    } catch (_) {
+      frequency.clear();
     }
     lastListId = prefs.getString(_lastListKey);
 
@@ -154,14 +181,32 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
+  String _newId() {
+    _idCounter++;
+    return '${DateTime.now().microsecondsSinceEpoch}_$_idCounter';
+  }
 
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_listsKey, jsonEncode(lists.map((list) => list.toJson()).toList()));
     await prefs.setStringList(_favoritesKey, favorites.toList());
     await prefs.setString(_frequencyKey, jsonEncode(frequency));
-    if (lastListId != null) await prefs.setString(_lastListKey, lastListId!);
+    if (lastListId != null) {
+      await prefs.setString(_lastListKey, lastListId!);
+    } else {
+      await prefs.remove(_lastListKey);
+    }
+  }
+
+  void scheduleSave() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 220), save);
+  }
+
+  @override
+  void dispose() {
+    _saveTimer?.cancel();
+    super.dispose();
   }
 
   ShoppingListModel createList(String name) {
@@ -175,7 +220,7 @@ class AppStore extends ChangeNotifier {
     lists.add(list);
     lastListId = list.id;
     notifyListeners();
-    save();
+    scheduleSave();
     return list;
   }
 
@@ -183,7 +228,7 @@ class AppStore extends ChangeNotifier {
     lastListId = list.id;
     list.updatedAt = DateTime.now();
     notifyListeners();
-    save();
+    scheduleSave();
   }
 
   void renameList(ShoppingListModel list, String name) {
@@ -191,7 +236,7 @@ class AppStore extends ChangeNotifier {
     list.name = name.trim();
     list.updatedAt = DateTime.now();
     notifyListeners();
-    save();
+    scheduleSave();
   }
 
   ShoppingListModel duplicateList(ShoppingListModel source) {
@@ -213,7 +258,7 @@ class AppStore extends ChangeNotifier {
     lists.add(copy);
     lastListId = copy.id;
     notifyListeners();
-    save();
+    scheduleSave();
     return copy;
   }
 
@@ -222,14 +267,14 @@ class AppStore extends ChangeNotifier {
     list.updatedAt = DateTime.now();
     if (lastListId == list.id) lastListId = activeLists.isEmpty ? null : activeLists.first.id;
     notifyListeners();
-    save();
+    scheduleSave();
   }
 
   void deleteList(ShoppingListModel list) {
     lists.removeWhere((item) => item.id == list.id);
     if (lastListId == list.id) lastListId = activeLists.isEmpty ? null : activeLists.first.id;
     notifyListeners();
-    save();
+    scheduleSave();
   }
 
   Product? exactProduct(String name) {
@@ -285,14 +330,14 @@ class AppStore extends ChangeNotifier {
     if (changed) {
       list.updatedAt = DateTime.now();
       notifyListeners();
-      save();
+      scheduleSave();
     }
   }
 
   void updateItem(ShoppingListModel list) {
     list.updatedAt = DateTime.now();
     notifyListeners();
-    save();
+    scheduleSave();
   }
 
   void removeItem(ShoppingListModel list, GroceryItem item) {
@@ -300,10 +345,28 @@ class AppStore extends ChangeNotifier {
     updateItem(list);
   }
 
+  void restoreItem(ShoppingListModel list, GroceryItem item, int index) {
+    final safeIndex = index.clamp(0, list.items.length) as int;
+    list.items.insert(safeIndex, item);
+    updateItem(list);
+  }
+
+  void clearCompleted(ShoppingListModel list) {
+    list.items.removeWhere((item) => item.done);
+    updateItem(list);
+  }
+
+  void markAllPending(ShoppingListModel list) {
+    for (final item in list.items) {
+      item.done = false;
+    }
+    updateItem(list);
+  }
+
   void toggleFavorite(String name) {
     favorites.contains(name) ? favorites.remove(name) : favorites.add(name);
     notifyListeners();
-    save();
+    scheduleSave();
   }
 }
 
@@ -632,13 +695,26 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     final result = products.where((product) {
       final matchesCategory = selectedCategory == 'الكل' || product.category == selectedCategory;
       final matchesFavorite = !favoritesOnly || widget.store.favorites.contains(product.name);
+      final searchable = normalizeArabic(
+        '${product.name} ${product.aliases.join(' ')} ${product.category}',
+      );
       final matchesQuery = normalizedQuery.isEmpty ||
-          normalizeArabic(product.name).contains(normalizedQuery) ||
-          product.aliases.any((alias) => normalizeArabic(alias).contains(normalizedQuery));
+          searchTokens(normalizedQuery).every(searchable.contains);
       return matchesCategory && matchesFavorite && matchesQuery;
     }).toList();
 
     result.sort((a, b) {
+      if (normalizedQuery.isNotEmpty) {
+        int score(Product product) {
+          final name = normalizeArabic(product.name);
+          if (name == normalizedQuery) return 3;
+          if (name.startsWith(normalizedQuery)) return 2;
+          if (name.contains(normalizedQuery)) return 1;
+          return 0;
+        }
+        final scoreCompare = score(b).compareTo(score(a));
+        if (scoreCompare != 0) return scoreCompare;
+      }
       final aFavorite = widget.store.favorites.contains(a.name) ? 1 : 0;
       final bFavorite = widget.store.favorites.contains(b.name) ? 1 : 0;
       if (aFavorite != bFavorite) return bFavorite.compareTo(aFavorite);
@@ -678,6 +754,34 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.list.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'خيارات القائمة',
+            onSelected: (value) async {
+              if (value == 'clearDone') {
+                final count = widget.list.completedCount;
+                if (count == 0) return;
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('حذف المشتريات المنتهية؟'),
+                    content: Text('سيتم حذف $count غرض منتهٍ.'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+                      FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('حذف')),
+                    ],
+                  ),
+                );
+                if (confirmed == true) widget.store.clearCompleted(widget.list);
+              }
+              if (value == 'reset') widget.store.markAllPending(widget.list);
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'reset', child: Text('إعادة كل الأغراض للمتبقي')),
+              PopupMenuItem(value: 'clearDone', child: Text('حذف المشتريات المنتهية')),
+            ],
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _add(controller.text),
@@ -837,14 +941,53 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                     ),
                     subtitle: Text('الكمية: ${item.quantity}'),
                     trailing: PopupMenuButton<String>(
-                      onSelected: (value) {
+                      onSelected: (value) async {
                         if (value == 'plus') item.quantity++;
                         if (value == 'minus' && item.quantity > 1) item.quantity--;
                         if (value == 'favorite') widget.store.toggleFavorite(item.name);
-                        if (value == 'delete') widget.store.removeItem(widget.list, item);
+                        if (value == 'edit') {
+                          final editController = TextEditingController(text: item.name);
+                          final newName = await showDialog<String>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('تعديل الغرض'),
+                              content: TextField(
+                                controller: editController,
+                                autofocus: true,
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (value) => Navigator.pop(context, value),
+                              ),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+                                FilledButton(onPressed: () => Navigator.pop(context, editController.text), child: const Text('حفظ')),
+                              ],
+                            ),
+                          );
+                          if (newName != null && newName.trim().isNotEmpty) {
+                            item.name = newName.trim();
+                            item.category = widget.store.categoryFor(item.name);
+                            widget.store.updateItem(widget.list);
+                          }
+                        }
+                        if (value == 'delete') {
+                          final oldIndex = widget.list.items.indexOf(item);
+                          widget.store.removeItem(widget.list, item);
+                          ScaffoldMessenger.of(context)
+                            ..hideCurrentSnackBar()
+                            ..showSnackBar(
+                              SnackBar(
+                                content: Text('تم حذف ${item.name}'),
+                                action: SnackBarAction(
+                                  label: 'تراجع',
+                                  onPressed: () => widget.store.restoreItem(widget.list, item, oldIndex),
+                                ),
+                              ),
+                            );
+                        }
                         if (value != 'favorite' && value != 'delete') widget.store.updateItem(widget.list);
                       },
                       itemBuilder: (_) => [
+                        const PopupMenuItem(value: 'edit', child: Text('تعديل الاسم')),
                         const PopupMenuItem(value: 'plus', child: Text('زيادة الكمية')),
                         const PopupMenuItem(value: 'minus', child: Text('تقليل الكمية')),
                         PopupMenuItem(
