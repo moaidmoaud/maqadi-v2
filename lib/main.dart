@@ -98,6 +98,50 @@ class PantryItem {
       );
 }
 
+class PantryMovement {
+  PantryMovement({
+    required this.id,
+    required this.pantryItemId,
+    required this.productName,
+    required this.type,
+    required this.amount,
+    required this.unit,
+    required this.createdAt,
+    this.note,
+  });
+
+  final String id;
+  final String pantryItemId;
+  final String productName;
+  final String type;
+  final double amount;
+  final String unit;
+  final DateTime createdAt;
+  final String? note;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'pantryItemId': pantryItemId,
+        'productName': productName,
+        'type': type,
+        'amount': amount,
+        'unit': unit,
+        'createdAt': createdAt.toIso8601String(),
+        'note': note,
+      };
+
+  factory PantryMovement.fromJson(Map<String, dynamic> json) => PantryMovement(
+        id: json['id'] as String? ?? DateTime.now().microsecondsSinceEpoch.toString(),
+        pantryItemId: json['pantryItemId'] as String? ?? '',
+        productName: json['productName'] as String? ?? '',
+        type: json['type'] as String? ?? 'تعديل',
+        amount: (json['amount'] as num?)?.toDouble() ?? 0,
+        unit: json['unit'] as String? ?? 'حبة',
+        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+        note: json['note'] as String?,
+      );
+}
+
 class ShoppingListModel {
   ShoppingListModel({
     required this.id,
@@ -151,11 +195,13 @@ class AppStore extends ChangeNotifier {
   static const _themeKey = 'maqadi_theme_v25';
   static const _fontScaleKey = 'maqadi_font_scale_v25';
   static const _pantryKey = 'maqadi_pantry_v26';
+  static const _movementsKey = 'maqadi_pantry_movements_v26_p2';
 
   final List<ShoppingListModel> lists = [];
   final Set<String> favorites = {};
   final Map<String, int> frequency = {};
   final List<PantryItem> pantry = [];
+  final List<PantryMovement> pantryMovements = [];
   String? lastListId;
   ThemeMode themeMode = ThemeMode.system;
   double fontScale = 1.0;
@@ -188,6 +234,7 @@ class AppStore extends ChangeNotifier {
     final rawLists = prefs.getString(_listsKey);
     final rawFrequency = prefs.getString(_frequencyKey);
     final rawPantry = prefs.getString(_pantryKey);
+    final rawMovements = prefs.getString(_movementsKey);
 
     try {
       if (rawLists != null) {
@@ -225,6 +272,18 @@ class AppStore extends ChangeNotifier {
       }
     } catch (_) {
       pantry.clear();
+    }
+    try {
+      if (rawMovements != null) {
+        final decoded = jsonDecode(rawMovements);
+        if (decoded is List) {
+          pantryMovements.addAll(decoded.whereType<Map>().map(
+                (item) => PantryMovement.fromJson(Map<String, dynamic>.from(item)),
+              ));
+        }
+      }
+    } catch (_) {
+      pantryMovements.clear();
     }
     lastListId = prefs.getString(_lastListKey);
     final savedTheme = prefs.getString(_themeKey);
@@ -268,6 +327,7 @@ class AppStore extends ChangeNotifier {
     await prefs.setString(_themeKey, themeMode.name);
     await prefs.setDouble(_fontScaleKey, fontScale);
     await prefs.setString(_pantryKey, jsonEncode(pantry.map((item) => item.toJson()).toList()));
+    await prefs.setString(_movementsKey, jsonEncode(pantryMovements.map((item) => item.toJson()).toList()));
   }
 
   void scheduleSave() {
@@ -453,9 +513,76 @@ class AppStore extends ChangeNotifier {
 
 
   List<PantryItem> get lowStockItems {
-    final result = pantry.where((item) => item.isLow).toList();
+    final result = pantry.where((item) => item.quantity <= item.minimum && item.quantity > 0).toList();
     result.sort((a, b) => a.name.compareTo(b.name));
     return result;
+  }
+
+  List<PantryItem> get emptyPantryItems {
+    final result = pantry.where((item) => item.quantity <= 0).toList();
+    result.sort((a, b) => a.name.compareTo(b.name));
+    return result;
+  }
+
+  List<PantryItem> get healthyPantryItems {
+    final result = pantry.where((item) => item.quantity > item.minimum).toList();
+    result.sort((a, b) => a.name.compareTo(b.name));
+    return result;
+  }
+
+  List<PantryMovement> movementsFor(PantryItem item) {
+    final result = pantryMovements.where((movement) => movement.pantryItemId == item.id).toList();
+    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return result;
+  }
+
+  void _recordMovement(PantryItem item, String type, double amount, {String? note}) {
+    pantryMovements.add(PantryMovement(
+      id: _newId(),
+      pantryItemId: item.id,
+      productName: item.name,
+      type: type,
+      amount: amount,
+      unit: item.unit,
+      createdAt: DateTime.now(),
+      note: note,
+    ));
+  }
+
+  PantryItem _upsertPantryFromPurchase(GroceryItem grocery) {
+    final normalized = normalizeArabic(grocery.name);
+    for (final item in pantry) {
+      if (normalizeArabic(item.name) == normalized) {
+        item.quantity += grocery.quantity;
+        _recordMovement(item, 'شراء', grocery.quantity.toDouble(), note: 'من قائمة المقاضي');
+        return item;
+      }
+    }
+    final item = PantryItem(
+      id: _newId(),
+      name: exactProduct(grocery.name)?.name ?? grocery.name,
+      category: grocery.category,
+      quantity: grocery.quantity.toDouble(),
+      minimum: 1,
+      unit: 'حبة',
+      location: 'المخزن',
+    );
+    pantry.add(item);
+    _recordMovement(item, 'شراء', grocery.quantity.toDouble(), note: 'أضيف تلقائيًا من قائمة المقاضي');
+    return item;
+  }
+
+  int putPurchasedItemsInPantry(ShoppingListModel list) {
+    final purchased = list.items.where((item) => item.done).toList();
+    if (purchased.isEmpty) return 0;
+    for (final item in purchased) {
+      _upsertPantryFromPurchase(item);
+    }
+    list.items.removeWhere((item) => item.done);
+    list.updatedAt = DateTime.now();
+    notifyListeners();
+    scheduleSave();
+    return purchased.length;
   }
 
   void addPantryItem({
@@ -469,12 +596,14 @@ class AppStore extends ChangeNotifier {
     if (cleanName.isEmpty) return;
     final existing = pantry.where((item) => normalizeArabic(item.name) == normalizeArabic(cleanName)).toList();
     if (existing.isNotEmpty) {
-      existing.first.quantity += quantity;
-      existing.first.minimum = minimum;
-      existing.first.unit = unit;
-      existing.first.location = location;
+      final item = existing.first;
+      item.quantity += quantity;
+      item.minimum = minimum;
+      item.unit = unit;
+      item.location = location;
+      _recordMovement(item, 'إضافة', quantity);
     } else {
-      pantry.add(PantryItem(
+      final item = PantryItem(
         id: _newId(),
         name: exactProduct(cleanName)?.name ?? cleanName,
         category: categoryFor(cleanName),
@@ -482,31 +611,41 @@ class AppStore extends ChangeNotifier {
         minimum: minimum,
         unit: unit,
         location: location,
-      ));
+      );
+      pantry.add(item);
+      _recordMovement(item, 'إضافة', quantity);
     }
     notifyListeners();
     scheduleSave();
   }
 
-  void updatePantryItem(PantryItem item) {
+  void updatePantryItem(PantryItem item, {double? previousQuantity}) {
+    if (previousQuantity != null && previousQuantity != item.quantity) {
+      _recordMovement(item, 'تعديل', item.quantity - previousQuantity);
+    }
     notifyListeners();
     scheduleSave();
   }
 
   void changePantryQuantity(PantryItem item, double delta) {
+    final before = item.quantity;
     item.quantity = (item.quantity + delta).clamp(0, 999999).toDouble();
-    updatePantryItem(item);
+    final actual = item.quantity - before;
+    if (actual != 0) _recordMovement(item, actual < 0 ? 'استهلاك' : 'إضافة', actual);
+    notifyListeners();
+    scheduleSave();
   }
 
   void deletePantryItem(PantryItem item) {
     pantry.remove(item);
+    pantryMovements.removeWhere((movement) => movement.pantryItemId == item.id);
     notifyListeners();
     scheduleSave();
   }
 
   void addLowStockToList(ShoppingListModel list) {
-    for (final item in lowStockItems) {
-      final needed = (item.minimum - item.quantity).ceil().clamp(1, 999);
+    for (final item in [...lowStockItems, ...emptyPantryItems]) {
+      final needed = (item.minimum - item.quantity).ceil().clamp(1, 999).toInt();
       final existing = list.items.where((g) => normalizeArabic(g.name) == normalizeArabic(item.name)).toList();
       if (existing.isEmpty) {
         list.items.add(GroceryItem(
@@ -938,6 +1077,7 @@ class _PantryScreenState extends State<PantryScreen> {
     if (result != true) return;
     final q = double.tryParse(quantity.text.replaceAll(',', '.')) ?? 0;
     final m = double.tryParse(minimum.text.replaceAll(',', '.')) ?? 0;
+    final previousQuantity = item?.quantity;
     if (item == null) {
       widget.store.addPantryItem(name: name.text, quantity: q, minimum: m, unit: unit, location: place);
     } else {
@@ -947,14 +1087,14 @@ class _PantryScreenState extends State<PantryScreen> {
       item.minimum = m.clamp(0, 999999).toDouble();
       item.unit = unit;
       item.location = place;
-      widget.store.updatePantryItem(item);
+      widget.store.updatePantryItem(item, previousQuantity: previousQuantity);
     }
   }
 
   String _format(double value) => value == value.roundToDouble() ? value.toInt().toString() : value.toStringAsFixed(1);
 
   Future<void> _addLowToList() async {
-    if (widget.store.lowStockItems.isEmpty) return;
+    if (widget.store.lowStockItems.isEmpty && widget.store.emptyPantryItems.isEmpty) return;
     final active = widget.store.activeLists;
     ShoppingListModel? selected = widget.store.lastList;
     final result = await showDialog<ShoppingListModel>(
@@ -976,6 +1116,55 @@ class _PantryScreenState extends State<PantryScreen> {
     }
   }
 
+  String _dateTime(DateTime value) {
+    final d = value.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  Future<void> _showHistory(PantryItem item) async {
+    final movements = widget.store.movementsFor(item);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * .72,
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: Text('سجل ${item.name}', style: const TextStyle(fontWeight: FontWeight.w900)),
+                subtitle: Text('${movements.length} حركة محفوظة'),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: movements.isEmpty
+                    ? const Center(child: Text('لا توجد حركات مسجلة بعد'))
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: movements.length,
+                        separatorBuilder: (_, __) => const Divider(),
+                        itemBuilder: (_, index) {
+                          final movement = movements[index];
+                          final sign = movement.amount > 0 ? '+' : '';
+                          return ListTile(
+                            leading: Icon(movement.type == 'شراء' ? Icons.shopping_bag_outlined : movement.amount < 0 ? Icons.remove_circle_outline : Icons.edit_outlined),
+                            title: Text(movement.type, style: const TextStyle(fontWeight: FontWeight.w800)),
+                            subtitle: Text('${_dateTime(movement.createdAt)}${movement.note == null ? '' : ' • ${movement.note}'}'),
+                            trailing: Text('$sign${_format(movement.amount)} ${movement.unit}', style: const TextStyle(fontWeight: FontWeight.w900)),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final allLocations = ['الكل', ...{for (final item in widget.store.pantry) item.location}];
@@ -993,7 +1182,7 @@ class _PantryScreenState extends State<PantryScreen> {
       appBar: AppBar(
         title: const Text('مخزن المنزل', style: TextStyle(fontWeight: FontWeight.w900)),
         actions: [
-          IconButton(tooltip: 'إضافة الناقص للقائمة', onPressed: widget.store.lowStockItems.isEmpty ? null : _addLowToList, icon: const Icon(Icons.playlist_add)),
+          IconButton(tooltip: 'إضافة الناقص للقائمة', onPressed: widget.store.lowStockItems.isEmpty && widget.store.emptyPantryItems.isEmpty ? null : _addLowToList, icon: const Icon(Icons.playlist_add)),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(onPressed: () => _showEditor(), icon: const Icon(Icons.add), label: const Text('إضافة منتج')),
@@ -1005,7 +1194,13 @@ class _PantryScreenState extends State<PantryScreen> {
               Row(children: [
                 Expanded(child: _PantrySummary(icon: Icons.inventory_2_outlined, label: 'المنتجات', value: '${widget.store.pantry.length}')),
                 const SizedBox(width: 10),
+                Expanded(child: _PantrySummary(icon: Icons.check_circle_outline, label: 'طبيعي', value: '${widget.store.healthyPantryItems.length}')),
+              ]),
+              const SizedBox(height: 8),
+              Row(children: [
                 Expanded(child: _PantrySummary(icon: Icons.warning_amber_rounded, label: 'منخفض', value: '${widget.store.lowStockItems.length}')),
+                const SizedBox(width: 10),
+                Expanded(child: _PantrySummary(icon: Icons.remove_shopping_cart_outlined, label: 'منتهي', value: '${widget.store.emptyPantryItems.length}')),
               ]),
               const SizedBox(height: 12),
               TextField(onChanged: (v) => setState(() => query = v), decoration: const InputDecoration(hintText: 'ابحث في المخزن', prefixIcon: Icon(Icons.search), border: OutlineInputBorder())),
@@ -1036,14 +1231,14 @@ class _PantryScreenState extends State<PantryScreen> {
                               CircleAvatar(backgroundColor: item.isLow ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.primaryContainer, child: Icon(item.isLow ? Icons.warning_amber_rounded : Icons.inventory_2_outlined)),
                               const SizedBox(width: 12),
                               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Row(children: [Expanded(child: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))), if (item.isLow) const Text('منخفض', style: TextStyle(fontWeight: FontWeight.w800))]),
+                                Row(children: [Expanded(child: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))), if (item.quantity <= 0) const Text('منتهي', style: TextStyle(fontWeight: FontWeight.w800)) else if (item.isLow) const Text('منخفض', style: TextStyle(fontWeight: FontWeight.w800))]),
                                 const SizedBox(height: 4),
                                 Text('${item.location} • الحد الأدنى ${_format(item.minimum)} ${item.unit}', style: Theme.of(context).textTheme.bodySmall),
                               ])),
                               IconButton(onPressed: () => widget.store.changePantryQuantity(item, -1), icon: const Icon(Icons.remove_circle_outline)),
                               Text('${_format(item.quantity)}\n${item.unit}', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w900)),
                               IconButton(onPressed: () => widget.store.changePantryQuantity(item, 1), icon: const Icon(Icons.add_circle_outline)),
-                              PopupMenuButton<String>(onSelected: (v) { if (v == 'edit') _showEditor(item); if (v == 'delete') widget.store.deletePantryItem(item); }, itemBuilder: (_) => const [PopupMenuItem(value: 'edit', child: Text('تعديل')), PopupMenuItem(value: 'delete', child: Text('حذف'))]),
+                              PopupMenuButton<String>(onSelected: (v) { if (v == 'edit') _showEditor(item); if (v == 'history') _showHistory(item); if (v == 'delete') widget.store.deletePantryItem(item); }, itemBuilder: (_) => const [PopupMenuItem(value: 'history', child: Text('سجل الحركة')), PopupMenuItem(value: 'edit', child: Text('تعديل')), PopupMenuItem(value: 'delete', child: Text('حذف'))]),
                             ]),
                           ),
                         ),
@@ -1197,7 +1392,7 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            const Card(child: ListTile(leading: Icon(Icons.info_outline), title: Text('مقاضي Sprint 2.5 — المرحلة الثالثة'), subtitle: Text('تحسينات الواجهة، الإحصائيات، المفضلة والإعدادات'))),
+            const Card(child: ListTile(leading: Icon(Icons.info_outline), title: Text('مقاضي Sprint 2.6 — المرحلة الثانية'), subtitle: Text('ربط قائمة المقاضي بالمخزن، سجل الحركة ولوحة حالة المخزون'))),
           ],
         ),
       );
@@ -1275,6 +1470,29 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     controller.clear();
   }
 
+  Future<void> _putPurchasedInPantry() async {
+    final count = widget.list.completedCount;
+    if (count == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('حدد الأغراض التي تم شراؤها أولًا')));
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تم وضع المقاضي في المنزل؟'),
+        content: Text('سيتم تحديث مخزن المنزل بـ $count غرض مشتَرى ثم حذفها من هذه القائمة.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+          FilledButton.icon(onPressed: () => Navigator.pop(context, true), icon: const Icon(Icons.inventory_2_outlined), label: const Text('تحديث المخزن')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final moved = widget.store.putPurchasedItemsInPantry(widget.list);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تم تحديث المخزن بـ $moved غرض')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final grouped = <String, List<GroceryItem>>{};
@@ -1347,6 +1565,13 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: widget.list.completedCount == 0 ? null : _putPurchasedInPantry,
+            icon: const Icon(Icons.home_work_outlined),
+            label: Text(widget.list.completedCount == 0 ? 'حدد المشتريات أولًا' : 'تم وضع المقاضي في المنزل (${widget.list.completedCount})'),
+            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
           ),
           const SizedBox(height: 12),
           TextField(
