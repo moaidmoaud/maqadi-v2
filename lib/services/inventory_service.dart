@@ -841,6 +841,16 @@ class InventoryService {
     return null;
   }
 
+  PantryItem? findById(String id) => _findById(id);
+
+  InventoryBatch? findBatchById(PantryItem item, String batchId) {
+    _requireItem(item);
+    for (final batch in item.batches) {
+      if (batch.id == batchId) return batch;
+    }
+    return null;
+  }
+
   PantryItem? findByBarcode(String barcode) {
     final key = _barcodeKey(barcode);
     if (key.isEmpty) return null;
