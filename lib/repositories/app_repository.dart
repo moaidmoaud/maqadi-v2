@@ -1,4 +1,5 @@
 import '../models/inventory_models.dart';
+import '../models/notification_models.dart';
 import '../models/shopping_models.dart';
 
 class AppData {
@@ -11,11 +12,12 @@ class AppData {
     this.lastListId,
     this.themeMode = 'system',
     this.fontScale = 1,
-  }) : lists = lists ?? [],
-       favorites = favorites ?? {},
-       frequency = frequency ?? {},
-       pantry = pantry ?? [],
-       pantryMovements = pantryMovements ?? [];
+    this.notificationSettings = const NotificationSettings(),
+  })  : lists = lists ?? [],
+        favorites = favorites ?? {},
+        frequency = frequency ?? {},
+        pantry = pantry ?? [],
+        pantryMovements = pantryMovements ?? [];
 
   final List<ShoppingListModel> lists;
   final Set<String> favorites;
@@ -25,6 +27,7 @@ class AppData {
   final String? lastListId;
   final String themeMode;
   final double fontScale;
+  final NotificationSettings notificationSettings;
 }
 
 abstract interface class AppRepository {

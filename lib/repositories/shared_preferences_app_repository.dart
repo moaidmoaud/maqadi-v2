@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/inventory_models.dart';
+import '../models/notification_models.dart';
 import '../models/shopping_models.dart';
 import 'app_repository.dart';
 
@@ -10,7 +11,7 @@ typedef PreferencesLoader = Future<SharedPreferences> Function();
 
 class SharedPreferencesAppRepository implements AppRepository {
   SharedPreferencesAppRepository({PreferencesLoader? preferencesLoader})
-    : _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
+      : _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
 
   static const listsKey = 'maqadi_lists_v25';
   static const favoritesKey = 'maqadi_favorites_v25';
@@ -20,6 +21,7 @@ class SharedPreferencesAppRepository implements AppRepository {
   static const fontScaleKey = 'maqadi_font_scale_v25';
   static const pantryKey = 'maqadi_pantry_v26';
   static const movementsKey = 'maqadi_pantry_movements_v26_p2';
+  static const notificationSettingsKey = 'maqadi_notification_settings_v45';
   static const schemaVersionKey = 'maqadi_schema_version';
   static const schemaVersion = 31;
 
@@ -40,9 +42,11 @@ class SharedPreferencesAppRepository implements AppRepository {
       ),
       lastListId: prefs.getString(lastListKey),
       themeMode: prefs.getString(themeKey) ?? 'system',
-      fontScale: (prefs.getDouble(fontScaleKey) ?? 1)
-          .clamp(0.9, 1.25)
-          .toDouble(),
+      fontScale:
+          (prefs.getDouble(fontScaleKey) ?? 1).clamp(0.9, 1.25).toDouble(),
+      notificationSettings: _decodeNotificationSettings(
+        prefs.getString(notificationSettingsKey),
+      ),
     );
   }
 
@@ -71,6 +75,10 @@ class SharedPreferencesAppRepository implements AppRepository {
       jsonEncode(
         data.pantryMovements.map((movement) => movement.toJson()).toList(),
       ),
+    );
+    await prefs.setString(
+      notificationSettingsKey,
+      jsonEncode(data.notificationSettings.toJson()),
     );
     await prefs.setInt(schemaVersionKey, schemaVersion);
   }
@@ -102,6 +110,17 @@ class SharedPreferencesAppRepository implements AppRepository {
       ).map((key, value) => MapEntry(key, value is num ? value.toInt() : 0));
     } catch (_) {
       return {};
+    }
+  }
+
+  NotificationSettings _decodeNotificationSettings(String? raw) {
+    if (raw == null) return const NotificationSettings();
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const NotificationSettings();
+      return NotificationSettings.fromJson(Map<String, dynamic>.from(decoded));
+    } catch (_) {
+      return const NotificationSettings();
     }
   }
 }

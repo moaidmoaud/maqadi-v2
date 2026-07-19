@@ -16,6 +16,7 @@ import 'screens/barcode_scanner_screen.dart';
 import 'screens/expiry_list_screen.dart';
 import 'utils/arabic_text.dart';
 import 'widgets/dashboard_analytics_panel.dart';
+import 'widgets/notification_settings_card.dart';
 import 'widgets/stock_status_badge.dart';
 
 void main() => runApp(const MaqadiApp());
@@ -297,6 +298,16 @@ class _HomeScreenState extends State<HomeScreen> {
     if (confirmed == true) widget.store.deleteList(list);
   }
 
+  void _openSettings() => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: SettingsScreen(store: widget.store),
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final last = widget.store.lastList;
@@ -319,15 +330,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           IconButton(
             tooltip: 'الإعدادات',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: SettingsScreen(store: widget.store),
-                ),
-              ),
-            ),
+            onPressed: _openSettings,
             icon: const Icon(Icons.settings_outlined),
           ),
           IconButton(
@@ -462,6 +465,8 @@ class _HomeScreenState extends State<HomeScreen> {
             onExpiringSoon: () => _openExpiry(BatchExpiryStatus.expiringSoon),
             onExpired: () => _openExpiry(BatchExpiryStatus.expired),
             onBatchManagement: _openBatchManagement,
+            notificationSummary: widget.store.notificationSummary,
+            onNotifications: _openSettings,
           ),
           const SizedBox(height: 22),
           Row(
@@ -1424,82 +1429,87 @@ class SettingsScreen extends StatelessWidget {
   final AppStore store;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: const Text(
-            'الإعدادات',
-            style: TextStyle(fontWeight: FontWeight.w900),
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: store,
+        builder: (context, _) => Scaffold(
+          appBar: AppBar(
+            title: const Text(
+              'الإعدادات',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
           ),
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            const Text(
-              'المظهر',
-              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 8),
-            Card(
-              child: Column(
-                children: [
-                  RadioListTile<ThemeMode>(
-                    value: ThemeMode.system,
-                    groupValue: store.themeMode,
-                    onChanged: (v) => store.setThemeMode(v!),
-                    title: const Text('حسب إعداد الجهاز'),
-                  ),
-                  RadioListTile<ThemeMode>(
-                    value: ThemeMode.light,
-                    groupValue: store.themeMode,
-                    onChanged: (v) => store.setThemeMode(v!),
-                    title: const Text('فاتح'),
-                  ),
-                  RadioListTile<ThemeMode>(
-                    value: ThemeMode.dark,
-                    groupValue: store.themeMode,
-                    onChanged: (v) => store.setThemeMode(v!),
-                    title: const Text('داكن'),
-                  ),
-                ],
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const Text(
+                'المظهر',
+                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
               ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'حجم النص',
-              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
-            ),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
+              const SizedBox(height: 8),
+              Card(
                 child: Column(
                   children: [
-                    Slider(
-                      value: store.fontScale,
-                      min: 0.9,
-                      max: 1.25,
-                      divisions: 7,
-                      label: '${(store.fontScale * 100).round()}٪',
-                      onChanged: store.setFontScale,
+                    RadioListTile<ThemeMode>(
+                      value: ThemeMode.system,
+                      groupValue: store.themeMode,
+                      onChanged: (v) => store.setThemeMode(v!),
+                      title: const Text('حسب إعداد الجهاز'),
                     ),
-                    Text(
-                      'نص تجريبي بحجم ${(store.fontScale * 100).round()}٪',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    RadioListTile<ThemeMode>(
+                      value: ThemeMode.light,
+                      groupValue: store.themeMode,
+                      onChanged: (v) => store.setThemeMode(v!),
+                      title: const Text('فاتح'),
+                    ),
+                    RadioListTile<ThemeMode>(
+                      value: ThemeMode.dark,
+                      groupValue: store.themeMode,
+                      onChanged: (v) => store.setThemeMode(v!),
+                      title: const Text('داكن'),
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            const Card(
-              child: ListTile(
-                leading: Icon(Icons.info_outline),
-                title: Text('مقاضي Sprint 2.6 — المرحلة الثانية'),
-                subtitle: Text(
-                  'ربط قائمة المقاضي بالمخزن، سجل الحركة ولوحة حالة المخزون',
+              const SizedBox(height: 20),
+              const Text(
+                'حجم النص',
+                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+              ),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Slider(
+                        value: store.fontScale,
+                        min: 0.9,
+                        max: 1.25,
+                        divisions: 7,
+                        label: '${(store.fontScale * 100).round()}٪',
+                        onChanged: store.setFontScale,
+                      ),
+                      Text(
+                        'نص تجريبي بحجم ${(store.fontScale * 100).round()}٪',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 20),
+              NotificationSettingsCard(store: store),
+              const SizedBox(height: 20),
+              const Card(
+                child: ListTile(
+                  leading: Icon(Icons.info_outline),
+                  title: Text('مقاضي Sprint 2.6 — المرحلة الثانية'),
+                  subtitle: Text(
+                    'ربط قائمة المقاضي بالمخزن، سجل الحركة ولوحة حالة المخزون',
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       );
 }

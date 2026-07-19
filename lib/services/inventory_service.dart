@@ -4,6 +4,7 @@ import '../models/barcode_models.dart';
 import '../models/dashboard_analytics_models.dart';
 import '../models/expiry_models.dart';
 import '../models/inventory_models.dart';
+import '../models/notification_models.dart';
 import '../models/shopping_models.dart';
 import '../models/stock_models.dart';
 import '../utils/arabic_text.dart';
@@ -280,6 +281,150 @@ class InventoryService {
 
   List<BatchExpiryInfo> expiredBatches({String query = ''}) =>
       expiryBatches(BatchExpiryStatus.expired, query: query);
+
+  List<SmartInventoryNotification> pendingNotifications(
+    NotificationSettings settings,
+  ) {
+    final now = _clock();
+    final scheduledAt = _nextDailyNotificationTime(now, settings);
+    final result = <SmartInventoryNotification>[];
+
+    for (final item in _items) {
+      final stock = stockInfoFor(item);
+      if (stock.status == StockStatus.outOfStock &&
+          settings.outOfStockEnabled) {
+        result.add(
+          _stockNotification(
+            item,
+            SmartNotificationType.outOfStock,
+            scheduledAt,
+          ),
+        );
+      } else if (stock.status == StockStatus.lowStock &&
+          settings.lowStockEnabled) {
+        result.add(
+          _stockNotification(
+            item,
+            SmartNotificationType.lowStock,
+            scheduledAt,
+          ),
+        );
+      }
+
+      for (final batch in item.batches.where((batch) => batch.quantity > 0)) {
+        final daysRemaining = _daysRemaining(batch);
+        if (daysRemaining == null) continue;
+        if (daysRemaining < 0 && settings.expiredEnabled) {
+          result.add(
+            _expiryNotification(
+              item,
+              batch,
+              SmartNotificationType.expired,
+              daysRemaining,
+              scheduledAt,
+            ),
+          );
+        } else if (daysRemaining <= settings.expiryReminderDays &&
+            settings.expiringSoonEnabled) {
+          result.add(
+            _expiryNotification(
+              item,
+              batch,
+              SmartNotificationType.expiringSoon,
+              daysRemaining,
+              scheduledAt,
+            ),
+          );
+        }
+      }
+    }
+
+    result.sort(_compareNotifications);
+    return List.unmodifiable(result);
+  }
+
+  NotificationSummary notificationSummary(NotificationSettings settings) {
+    var lowStock = 0;
+    var outOfStock = 0;
+    var expiringSoon = 0;
+    var expired = 0;
+    final pending = pendingNotifications(settings);
+    for (final notification in pending) {
+      switch (notification.type) {
+        case SmartNotificationType.lowStock:
+          lowStock++;
+        case SmartNotificationType.outOfStock:
+          outOfStock++;
+        case SmartNotificationType.expiringSoon:
+          expiringSoon++;
+        case SmartNotificationType.expired:
+          expired++;
+      }
+    }
+    return NotificationSummary(
+      pendingCount: pending.length,
+      lowStock: lowStock,
+      outOfStock: outOfStock,
+      expiringSoon: expiringSoon,
+      expired: expired,
+    );
+  }
+
+  List<SmartInventoryNotification> notificationSchedule(
+    NotificationSettings settings,
+  ) {
+    if (!settings.anyEnabled) return const [];
+    final now = _clock();
+    final result = pendingNotifications(settings).toList();
+
+    for (final item in _items) {
+      for (final batch in item.batches.where((batch) => batch.quantity > 0)) {
+        final expiresAt = batch.expiresAt;
+        final daysRemaining = _daysRemaining(batch);
+        if (expiresAt == null || daysRemaining == null) continue;
+
+        if (settings.expiringSoonEnabled &&
+            daysRemaining > settings.expiryReminderDays) {
+          final reminderDate = _localNotificationTime(
+            expiresAt.subtract(Duration(days: settings.expiryReminderDays)),
+            settings,
+          );
+          if (reminderDate.isAfter(now)) {
+            result.add(
+              _expiryNotification(
+                item,
+                batch,
+                SmartNotificationType.expiringSoon,
+                settings.expiryReminderDays,
+                reminderDate,
+              ),
+            );
+          }
+        }
+
+        if (settings.expiredEnabled && daysRemaining >= 0) {
+          final expiredDate = _localNotificationTime(
+            expiresAt.add(const Duration(days: 1)),
+            settings,
+          );
+          if (expiredDate.isAfter(now)) {
+            result.add(
+              _expiryNotification(
+                item,
+                batch,
+                SmartNotificationType.expired,
+                -1,
+                expiredDate,
+              ),
+            );
+          }
+        }
+      }
+    }
+
+    result.sort(_compareNotifications);
+    return List.unmodifiable(result);
+  }
 
   DashboardAnalytics dashboardAnalytics({required int shoppingListItems}) {
     final today = _dateOnly(_clock());
@@ -972,6 +1117,111 @@ class InventoryService {
     }
     return true;
   }
+
+  SmartInventoryNotification _stockNotification(
+    PantryItem item,
+    SmartNotificationType type,
+    DateTime scheduledAt,
+  ) {
+    final stock = stockInfoFor(item);
+    final isOut = type == SmartNotificationType.outOfStock;
+    return SmartInventoryNotification(
+      id: _notificationId(type, item.id),
+      type: type,
+      title: isOut ? 'نفد مخزون ${item.name}' : 'مخزون منخفض: ${item.name}',
+      body: isOut
+          ? 'لا توجد كمية متاحة من ${item.name}'
+          : 'المتاح ${_formatQuantity(stock.currentQuantity)} ${item.unit}، '
+              'والحد الأدنى ${_formatQuantity(stock.minimumQuantity)}',
+      payload: productQrPayload(item),
+      scheduledAt: scheduledAt,
+      itemId: item.id,
+    );
+  }
+
+  SmartInventoryNotification _expiryNotification(
+    PantryItem item,
+    InventoryBatch batch,
+    SmartNotificationType type,
+    int daysRemaining,
+    DateTime scheduledAt,
+  ) {
+    final isExpired = type == SmartNotificationType.expired;
+    final remainingText = switch (daysRemaining) {
+      < 0 => 'منتهية الصلاحية',
+      0 => 'تنتهي اليوم',
+      1 => 'يتبقى يوم واحد',
+      _ => 'يتبقى $daysRemaining يومًا',
+    };
+    return SmartInventoryNotification(
+      id: _notificationId(type, item.id, batch.id),
+      type: type,
+      title:
+          isExpired ? 'انتهت صلاحية ${item.name}' : 'اقترب انتهاء ${item.name}',
+      body: 'الدفعة ${batch.id}: $remainingText',
+      payload: batchQrPayload(item, batch),
+      scheduledAt: scheduledAt,
+      itemId: item.id,
+      batchId: batch.id,
+    );
+  }
+
+  DateTime _nextDailyNotificationTime(
+    DateTime now,
+    NotificationSettings settings,
+  ) {
+    var result = _localNotificationTime(now, settings);
+    if (!result.isAfter(now)) result = result.add(const Duration(days: 1));
+    return result;
+  }
+
+  DateTime _localNotificationTime(
+    DateTime date,
+    NotificationSettings settings,
+  ) =>
+      DateTime(
+        date.year,
+        date.month,
+        date.day,
+        settings.dailyHour,
+        settings.dailyMinute,
+      );
+
+  int _notificationId(
+    SmartNotificationType type,
+    String itemId, [
+    String? batchId,
+  ]) {
+    final value = '${type.name}|$itemId|${batchId ?? ''}';
+    var hash = 0x811c9dc5;
+    for (final codeUnit in value.codeUnits) {
+      hash = ((hash ^ codeUnit) * 0x01000193) & 0x7fffffff;
+    }
+    return hash;
+  }
+
+  int _compareNotifications(
+    SmartInventoryNotification a,
+    SmartInventoryNotification b,
+  ) {
+    final byDate = a.scheduledAt.compareTo(b.scheduledAt);
+    if (byDate != 0) return byDate;
+    final byType = _notificationSortOrder(
+      a.type,
+    ).compareTo(_notificationSortOrder(b.type));
+    return byType != 0 ? byType : a.id.compareTo(b.id);
+  }
+
+  int _notificationSortOrder(SmartNotificationType type) => switch (type) {
+        SmartNotificationType.expired => 0,
+        SmartNotificationType.outOfStock => 1,
+        SmartNotificationType.expiringSoon => 2,
+        SmartNotificationType.lowStock => 3,
+      };
+
+  String _formatQuantity(double value) => value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toStringAsFixed(1);
 
   PantryItem? _pantryItemFor(GroceryItem grocery) {
     final pantryItemId = grocery.pantryItemId;

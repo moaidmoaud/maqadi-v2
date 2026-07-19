@@ -6,27 +6,37 @@ import 'models/barcode_models.dart';
 import 'models/dashboard_analytics_models.dart';
 import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
+import 'models/notification_models.dart';
 import 'models/shopping_models.dart';
 import 'models/stock_models.dart';
 import 'products.dart';
 import 'repositories/app_repository.dart';
 import 'repositories/shared_preferences_app_repository.dart';
 import 'services/inventory_service.dart';
+import 'services/local_notification_scheduler.dart';
+import 'services/notification_scheduler.dart';
 import 'utils/arabic_text.dart';
 
 class AppStore extends ChangeNotifier {
-  AppStore({AppRepository? repository, InventoryService? inventoryService})
-      : _repository = repository ?? SharedPreferencesAppRepository(),
-        _inventory = inventoryService ?? InventoryService();
+  AppStore({
+    AppRepository? repository,
+    InventoryService? inventoryService,
+    NotificationScheduler? notificationScheduler,
+  })  : _repository = repository ?? SharedPreferencesAppRepository(),
+        _inventory = inventoryService ?? InventoryService(),
+        _notificationScheduler =
+            notificationScheduler ?? LocalNotificationScheduler();
 
   final AppRepository _repository;
   final InventoryService _inventory;
+  final NotificationScheduler _notificationScheduler;
   final List<ShoppingListModel> lists = [];
   final Set<String> favorites = {};
   final Map<String, int> frequency = {};
   String? lastListId;
   ThemeMode themeMode = ThemeMode.system;
   double fontScale = 1;
+  NotificationSettings notificationSettings = const NotificationSettings();
   bool isReady = false;
   Timer? _saveTimer;
   int _idCounter = 0;
@@ -74,6 +84,7 @@ class AppStore extends ChangeNotifier {
     lastListId = data.lastListId;
     themeMode = _themeModeFromName(data.themeMode);
     fontScale = data.fontScale.clamp(0.9, 1.25).toDouble();
+    notificationSettings = data.notificationSettings;
 
     var needsSave = false;
     if (lists.isEmpty) {
@@ -95,6 +106,7 @@ class AppStore extends ChangeNotifier {
 
     isReady = true;
     notifyListeners();
+    unawaited(_synchronizeNotifications());
   }
 
   Future<void> save() => _repository.save(
@@ -107,6 +119,7 @@ class AppStore extends ChangeNotifier {
           lastListId: lastListId,
           themeMode: themeMode.name,
           fontScale: fontScale,
+          notificationSettings: notificationSettings,
         ),
       );
 
@@ -346,6 +359,12 @@ class AppStore extends ChangeNotifier {
   DashboardAnalytics dashboardAnalytics() =>
       _inventory.dashboardAnalytics(shoppingListItems: shoppingListItemCount);
 
+  NotificationSummary get notificationSummary =>
+      _inventory.notificationSummary(notificationSettings);
+
+  List<SmartInventoryNotification> get pendingNotifications =>
+      _inventory.pendingNotifications(notificationSettings);
+
   List<DashboardSearchResult> searchDashboard(String query) =>
       _inventory.searchDashboard(query);
 
@@ -572,6 +591,23 @@ class AppStore extends ChangeNotifier {
     _changed();
   }
 
+  Future<bool> setNotificationSettings(NotificationSettings settings) async {
+    notificationSettings = settings;
+    _changed();
+    final permissionGranted =
+        settings.anyEnabled ? await requestNotificationPermissions() : true;
+    await _synchronizeNotifications();
+    return permissionGranted;
+  }
+
+  Future<bool> requestNotificationPermissions() async {
+    try {
+      return await _notificationScheduler.requestPermissions();
+    } catch (_) {
+      return false;
+    }
+  }
+
   void _changed() {
     notifyListeners();
     scheduleSave();
@@ -580,6 +616,18 @@ class AppStore extends ChangeNotifier {
   void _inventoryChanged() {
     _synchronizeAutomaticShoppingList();
     _changed();
+    unawaited(_synchronizeNotifications());
+  }
+
+  Future<void> _synchronizeNotifications() async {
+    try {
+      await _notificationScheduler.synchronize(
+        _inventory.notificationSchedule(notificationSettings),
+      );
+    } catch (_) {
+      // Inventory changes and saved data remain valid if a platform does not
+      // support local scheduling or permission has not been granted yet.
+    }
   }
 
   bool _synchronizeAutomaticShoppingList() {

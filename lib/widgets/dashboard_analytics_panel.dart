@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/dashboard_analytics_models.dart';
 import '../models/inventory_models.dart';
+import '../models/notification_models.dart';
 
 class DashboardAnalyticsPanel extends StatefulWidget {
   const DashboardAnalyticsPanel({
@@ -17,6 +18,8 @@ class DashboardAnalyticsPanel extends StatefulWidget {
     required this.onExpiringSoon,
     required this.onExpired,
     required this.onBatchManagement,
+    this.notificationSummary = const NotificationSummary.empty(),
+    this.onNotifications,
   });
 
   final DashboardAnalytics analytics;
@@ -30,6 +33,8 @@ class DashboardAnalyticsPanel extends StatefulWidget {
   final VoidCallback onExpiringSoon;
   final VoidCallback onExpired;
   final VoidCallback onBatchManagement;
+  final NotificationSummary notificationSummary;
+  final VoidCallback? onNotifications;
 
   @override
   State<DashboardAnalyticsPanel> createState() =>
@@ -164,6 +169,32 @@ class _DashboardAnalyticsPanelState extends State<DashboardAnalyticsPanel> {
               onTap: widget.onShoppingList,
             ),
           ],
+        ),
+        const SizedBox(height: 10),
+        Card(
+          key: const ValueKey('dashboard-notification-summary'),
+          child: ListTile(
+            onTap: widget.onNotifications,
+            leading: Badge(
+              label: Text('${widget.notificationSummary.pendingCount}'),
+              isLabelVisible: widget.notificationSummary.pendingCount > 0,
+              child: const Icon(Icons.notifications_active_outlined),
+            ),
+            title: const Text(
+              'الإشعارات الذكية',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: Text(
+              '${widget.notificationSummary.pendingCount} إشعار معلق • '
+              'منخفض ${widget.notificationSummary.lowStock} • '
+              'نفد ${widget.notificationSummary.outOfStock} • '
+              'قريب ${widget.notificationSummary.expiringSoon} • '
+              'منتهي ${widget.notificationSummary.expired}',
+            ),
+            trailing: widget.onNotifications == null
+                ? null
+                : const Icon(Icons.chevron_left),
+          ),
         ),
         const SizedBox(height: 20),
         const _SectionTitle(icon: Icons.bolt_outlined, title: 'إجراءات سريعة'),
