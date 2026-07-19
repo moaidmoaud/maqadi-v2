@@ -69,10 +69,12 @@ class DashboardSearchResult {
   const DashboardSearchResult({
     required this.item,
     required this.matchedFields,
+    required this.matchedBarcodes,
     required this.matchedBatchIds,
   });
 
   final PantryItem item;
   final List<String> matchedFields;
+  final List<String> matchedBarcodes;
   final List<String> matchedBatchIds;
 }

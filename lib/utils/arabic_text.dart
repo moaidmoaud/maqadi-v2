@@ -6,10 +6,10 @@ String normalizeArabic(String value) => value
     .replaceAll('ئ', 'ي')
     .replaceAll('ة', 'ه')
     .replaceAll('ى', 'ي')
-    .replaceAll(RegExp(r'[^\u0621-\u064A0-9 ]'), ' ')
+    .replaceAll(RegExp(r'[^\u0621-\u064Aa-z0-9 ]'), ' ')
     .replaceAll(RegExp(r'\s+'), ' ')
     .trim();
 
 List<String> searchTokens(String value) => normalizeArabic(
-  value,
-).split(' ').where((token) => token.isNotEmpty).toList();
+      value,
+    ).split(' ').where((token) => token.isNotEmpty).toList();

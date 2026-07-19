@@ -5,12 +5,14 @@
 import 'package:flutter/material.dart';
 
 import 'app_store.dart';
+import 'models/barcode_models.dart';
 import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
 import 'models/shopping_models.dart';
 import 'models/stock_models.dart';
 import 'products.dart';
 import 'screens/batch_management_screen.dart';
+import 'screens/barcode_scanner_screen.dart';
 import 'screens/expiry_list_screen.dart';
 import 'utils/arabic_text.dart';
 import 'widgets/dashboard_analytics_panel.dart';
@@ -82,10 +84,12 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.store,
     required this.onToggleTheme,
+    this.scannerBuilder,
   });
 
   final AppStore store;
   final VoidCallback onToggleTheme;
+  final BarcodeScannerBuilder? scannerBuilder;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -150,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _openList(list, initialStockFilter: stockFilter);
   }
 
-  void _openPantry({bool addProduct = false}) {
+  void _openPantry({bool addProduct = false, String? initialBarcode}) {
     Navigator.push(
       context,
       MaterialPageRoute<void>(
@@ -158,7 +162,9 @@ class _HomeScreenState extends State<HomeScreen> {
           textDirection: TextDirection.rtl,
           child: PantryScreen(
             store: widget.store,
-            openAddProductEditor: addProduct,
+            openAddProductEditor: addProduct || initialBarcode != null,
+            initialBarcode: initialBarcode,
+            scannerBuilder: widget.scannerBuilder,
           ),
         ),
       ),
@@ -177,13 +183,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openProduct(PantryItem item) {
+  void _openProduct(PantryItem item, {InventoryBatch? batch}) {
     Navigator.push(
       context,
       MaterialPageRoute<void>(
         builder: (_) => Directionality(
           textDirection: TextDirection.rtl,
-          child: BatchManagementScreen(store: widget.store, item: item),
+          child: BatchManagementScreen(
+            store: widget.store,
+            item: item,
+            initialBatchId: batch?.id,
+            scannerBuilder: widget.scannerBuilder,
+          ),
         ),
       ),
     );
@@ -224,6 +235,47 @@ class _HomeScreenState extends State<HomeScreen> {
     if (selected != null && mounted) _openProduct(selected);
   }
 
+  Future<void> _scanInventoryCode() async {
+    final value = await Navigator.push<String>(
+      context,
+      MaterialPageRoute<String>(
+        builder: (_) => BarcodeScannerScreen(
+          scannerBuilder: widget.scannerBuilder,
+        ),
+      ),
+    );
+    if (value == null || !mounted) return;
+    final result = widget.store.resolveInventoryScan(value);
+    switch (result.type) {
+      case InventoryScanResultType.internalQr:
+      case InventoryScanResultType.barcode:
+        _openProduct(result.item!, batch: result.batch);
+      case InventoryScanResultType.unknown:
+        final create = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('باركود غير مسجل'),
+            content: Text(
+              'لم يتم العثور على منتج للرمز:\n${result.rawValue}\n\nهل تريد إنشاء منتج جديد؟',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('إنشاء منتج'),
+              ),
+            ],
+          ),
+        );
+        if (create == true && mounted) {
+          _openPantry(addProduct: true, initialBarcode: result.rawValue);
+        }
+    }
+  }
+
   Future<void> _confirmDelete(ShoppingListModel list) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -259,6 +311,12 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('scan-inventory-code'),
+            tooltip: 'مسح باركود أو QR',
+            onPressed: _scanInventoryCode,
+            icon: const Icon(Icons.qr_code_scanner),
+          ),
           IconButton(
             tooltip: 'الإعدادات',
             onPressed: () => Navigator.push(
@@ -547,9 +605,13 @@ class PantryScreen extends StatefulWidget {
     super.key,
     required this.store,
     this.openAddProductEditor = false,
+    this.initialBarcode,
+    this.scannerBuilder,
   });
   final AppStore store;
   final bool openAddProductEditor;
+  final String? initialBarcode;
+  final BarcodeScannerBuilder? scannerBuilder;
 
   @override
   State<PantryScreen> createState() => _PantryScreenState();
@@ -559,10 +621,12 @@ class _PantryScreenState extends State<PantryScreen> {
   String query = '';
   String location = 'الكل';
   bool lowOnly = false;
+  String? _pendingInitialBarcode;
 
   @override
   void initState() {
     super.initState();
+    _pendingInitialBarcode = widget.initialBarcode;
     if (widget.openAddProductEditor) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _showEditor();
@@ -578,6 +642,10 @@ class _PantryScreenState extends State<PantryScreen> {
     final minimum = TextEditingController(
       text: item == null ? '1' : _format(item.minimum),
     );
+    final primaryBarcode = TextEditingController(
+      text: item?.primaryBarcode ?? _pendingInitialBarcode ?? '',
+    );
+    if (item == null) _pendingInitialBarcode = null;
     String unit = item?.unit ?? 'حبة';
     String place = item?.location ?? 'المخزن';
 
@@ -610,6 +678,15 @@ class _PantryScreenState extends State<PantryScreen> {
                   decoration: const InputDecoration(
                     labelText: 'اسم المنتج',
                     prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  key: const ValueKey('pantry-primary-barcode-field'),
+                  controller: primaryBarcode,
+                  decoration: const InputDecoration(
+                    labelText: 'الباركود الأساسي (اختياري)',
+                    prefixIcon: Icon(Icons.qr_code_scanner),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -690,27 +767,50 @@ class _PantryScreenState extends State<PantryScreen> {
         ),
       ),
     );
-    if (result != true) return;
+    if (result != true) {
+      name.dispose();
+      quantity.dispose();
+      minimum.dispose();
+      primaryBarcode.dispose();
+      return;
+    }
     final q = double.tryParse(quantity.text.replaceAll(',', '.')) ?? 0;
     final m = double.tryParse(minimum.text.replaceAll(',', '.')) ?? 0;
-    if (item == null) {
-      widget.store.addPantryItem(
-        name: name.text,
-        quantity: q,
-        minimum: m,
-        unit: unit,
-        location: place,
-      );
-    } else {
-      widget.store.updatePantryItem(
-        item,
-        name: name.text,
-        quantity: q,
-        minimum: m,
-        unit: unit,
-        location: place,
-      );
+    try {
+      if (item == null) {
+        widget.store.addPantryItem(
+          name: name.text,
+          quantity: q,
+          minimum: m,
+          unit: unit,
+          location: place,
+          primaryBarcode: primaryBarcode.text,
+        );
+      } else {
+        widget.store.updatePantryItem(
+          item,
+          name: name.text,
+          quantity: q,
+          minimum: m,
+          unit: unit,
+          location: place,
+          primaryBarcode: primaryBarcode.text,
+          additionalBarcodes: item.additionalBarcodes,
+        );
+      }
+    } on ArgumentError catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message?.toString() ?? 'تعذر حفظ الباركود'),
+          ),
+        );
+      }
     }
+    name.dispose();
+    quantity.dispose();
+    minimum.dispose();
+    primaryBarcode.dispose();
   }
 
   String _format(double value) => value == value.roundToDouble()
@@ -1069,6 +1169,8 @@ class _PantryScreenState extends State<PantryScreen> {
                                           builder: (_) => BatchManagementScreen(
                                             store: widget.store,
                                             item: item,
+                                            scannerBuilder:
+                                                widget.scannerBuilder,
                                           ),
                                         ),
                                       );

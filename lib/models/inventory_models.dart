@@ -14,24 +14,22 @@ class InventoryBatch {
   String? note;
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'quantity': quantity,
-    'receivedAt': receivedAt.toIso8601String(),
-    'expiresAt': expiresAt?.toIso8601String(),
-    'note': note,
-  };
+        'id': id,
+        'quantity': quantity,
+        'receivedAt': receivedAt.toIso8601String(),
+        'expiresAt': expiresAt?.toIso8601String(),
+        'note': note,
+      };
 
   factory InventoryBatch.fromJson(Map<String, dynamic> json) => InventoryBatch(
-    id:
-        json['id'] as String? ??
-        DateTime.now().microsecondsSinceEpoch.toString(),
-    quantity: (json['quantity'] as num?)?.toDouble() ?? 0,
-    receivedAt:
-        DateTime.tryParse(json['receivedAt'] as String? ?? '') ??
-        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-    expiresAt: DateTime.tryParse(json['expiresAt'] as String? ?? ''),
-    note: json['note'] as String?,
-  );
+        id: json['id'] as String? ??
+            DateTime.now().microsecondsSinceEpoch.toString(),
+        quantity: (json['quantity'] as num?)?.toDouble() ?? 0,
+        receivedAt: DateTime.tryParse(json['receivedAt'] as String? ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+        expiresAt: DateTime.tryParse(json['expiresAt'] as String? ?? ''),
+        note: json['note'] as String?,
+      );
 }
 
 class PantryItem {
@@ -44,21 +42,23 @@ class PantryItem {
     required this.location,
     double quantity = 0,
     List<InventoryBatch>? batches,
-  }) : batches =
-           batches ??
-           (quantity > 0
-               ? [
-                   InventoryBatch(
-                     id: '${id}_initial',
-                     quantity: quantity,
-                     receivedAt: DateTime.fromMillisecondsSinceEpoch(
-                       0,
-                       isUtc: true,
-                     ),
-                     note: 'رصيد افتتاحي',
-                   ),
-                 ]
-               : []);
+    this.primaryBarcode,
+    List<String>? additionalBarcodes,
+  })  : additionalBarcodes = additionalBarcodes ?? [],
+        batches = batches ??
+            (quantity > 0
+                ? [
+                    InventoryBatch(
+                      id: '${id}_initial',
+                      quantity: quantity,
+                      receivedAt: DateTime.fromMillisecondsSinceEpoch(
+                        0,
+                        isUtc: true,
+                      ),
+                      note: 'رصيد افتتاحي',
+                    ),
+                  ]
+                : []);
 
   final String id;
   String name;
@@ -66,6 +66,8 @@ class PantryItem {
   double minimum;
   String unit;
   String location;
+  String? primaryBarcode;
+  final List<String> additionalBarcodes;
   final List<InventoryBatch> batches;
 
   double get quantity =>
@@ -74,20 +76,22 @@ class PantryItem {
   bool get isLow => quantity <= minimum;
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'category': category,
-    // Kept for older app versions that do not understand batches yet.
-    'quantity': quantity,
-    'minimum': minimum,
-    'unit': unit,
-    'location': location,
-    'batches': batches.map((batch) => batch.toJson()).toList(),
-  };
+        'id': id,
+        'name': name,
+        'category': category,
+        // Kept for older app versions that do not understand batches yet.
+        'quantity': quantity,
+        'minimum': minimum,
+        'unit': unit,
+        'location': location,
+        if (primaryBarcode != null) 'primaryBarcode': primaryBarcode,
+        if (additionalBarcodes.isNotEmpty)
+          'additionalBarcodes': additionalBarcodes,
+        'batches': batches.map((batch) => batch.toJson()).toList(),
+      };
 
   factory PantryItem.fromJson(Map<String, dynamic> json) {
-    final id =
-        json['id'] as String? ??
+    final id = json['id'] as String? ??
         DateTime.now().microsecondsSinceEpoch.toString();
     final legacyQuantity = (json['quantity'] as num?)?.toDouble() ?? 0;
     final decodedBatches = ((json['batches'] as List?) ?? const [])
@@ -109,6 +113,19 @@ class PantryItem {
       );
     }
 
+    final legacyPrimary = json['primaryBarcode'] ?? json['barcode'];
+    final primaryBarcode =
+        legacyPrimary is String && legacyPrimary.trim().isNotEmpty
+            ? legacyPrimary.trim()
+            : null;
+    final additionalBarcodes =
+        ((json['additionalBarcodes'] as List?) ?? const [])
+            .whereType<String>()
+            .map((barcode) => barcode.trim())
+            .where((barcode) => barcode.isNotEmpty && barcode != primaryBarcode)
+            .toSet()
+            .toList();
+
     return PantryItem(
       id: id,
       name: json['name'] as String? ?? '',
@@ -116,6 +133,8 @@ class PantryItem {
       minimum: (json['minimum'] as num?)?.toDouble() ?? 1,
       unit: json['unit'] as String? ?? 'حبة',
       location: json['location'] as String? ?? 'المخزن',
+      primaryBarcode: primaryBarcode,
+      additionalBarcodes: additionalBarcodes,
       batches: decodedBatches,
     );
   }
@@ -145,32 +164,31 @@ class PantryMovement {
   final Map<String, double> batchAllocations;
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'pantryItemId': pantryItemId,
-    'productName': productName,
-    'type': type,
-    'amount': amount,
-    'unit': unit,
-    'createdAt': createdAt.toIso8601String(),
-    'note': note,
-    if (batchAllocations.isNotEmpty) 'batchAllocations': batchAllocations,
-  };
+        'id': id,
+        'pantryItemId': pantryItemId,
+        'productName': productName,
+        'type': type,
+        'amount': amount,
+        'unit': unit,
+        'createdAt': createdAt.toIso8601String(),
+        'note': note,
+        if (batchAllocations.isNotEmpty) 'batchAllocations': batchAllocations,
+      };
 
   factory PantryMovement.fromJson(Map<String, dynamic> json) => PantryMovement(
-    id:
-        json['id'] as String? ??
-        DateTime.now().microsecondsSinceEpoch.toString(),
-    pantryItemId: json['pantryItemId'] as String? ?? '',
-    productName: json['productName'] as String? ?? '',
-    type: json['type'] as String? ?? 'تعديل',
-    amount: (json['amount'] as num?)?.toDouble() ?? 0,
-    unit: json['unit'] as String? ?? 'حبة',
-    createdAt:
-        DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
-    note: json['note'] as String?,
-    batchAllocations: ((json['batchAllocations'] as Map?) ?? const {}).map(
-      (key, value) =>
-          MapEntry(key.toString(), value is num ? value.toDouble() : 0),
-    ),
-  );
+        id: json['id'] as String? ??
+            DateTime.now().microsecondsSinceEpoch.toString(),
+        pantryItemId: json['pantryItemId'] as String? ?? '',
+        productName: json['productName'] as String? ?? '',
+        type: json['type'] as String? ?? 'تعديل',
+        amount: (json['amount'] as num?)?.toDouble() ?? 0,
+        unit: json['unit'] as String? ?? 'حبة',
+        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+            DateTime.now(),
+        note: json['note'] as String?,
+        batchAllocations: ((json['batchAllocations'] as Map?) ?? const {}).map(
+          (key, value) =>
+              MapEntry(key.toString(), value is num ? value.toDouble() : 0),
+        ),
+      );
 }

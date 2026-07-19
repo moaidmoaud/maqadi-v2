@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'models/barcode_models.dart';
 import 'models/dashboard_analytics_models.dart';
 import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
@@ -399,16 +400,27 @@ class AppStore extends ChangeNotifier {
     required double minimum,
     required String unit,
     required String location,
+    String? primaryBarcode,
+    Iterable<String> additionalBarcodes = const [],
   }) {
     final cleanName = name.trim();
     if (cleanName.isEmpty) return;
-    _inventory.addStock(
+    _inventory.validateBarcodes(
+      primaryBarcode: primaryBarcode,
+      additionalBarcodes: additionalBarcodes,
+    );
+    final item = _inventory.addStock(
       name: exactProduct(cleanName)?.name ?? cleanName,
       category: categoryFor(cleanName),
       quantity: quantity,
       minimum: minimum,
       unit: unit,
       location: location,
+    );
+    _inventory.setBarcodes(
+      item,
+      primaryBarcode: primaryBarcode,
+      additionalBarcodes: additionalBarcodes,
     );
     _inventoryChanged();
   }
@@ -420,8 +432,19 @@ class AppStore extends ChangeNotifier {
     required double minimum,
     required String unit,
     required String location,
+    String? primaryBarcode,
+    Iterable<String>? additionalBarcodes,
   }) {
     final cleanName = name.trim().isEmpty ? item.name : name.trim();
+    final shouldUpdateBarcodes =
+        primaryBarcode != null || additionalBarcodes != null;
+    if (shouldUpdateBarcodes) {
+      _inventory.validateBarcodes(
+        item: item,
+        primaryBarcode: primaryBarcode,
+        additionalBarcodes: additionalBarcodes ?? item.additionalBarcodes,
+      );
+    }
     _inventory.updateItem(
       item,
       name: cleanName,
@@ -431,8 +454,49 @@ class AppStore extends ChangeNotifier {
       unit: unit,
       location: location,
     );
+    if (shouldUpdateBarcodes) {
+      _inventory.setBarcodes(
+        item,
+        primaryBarcode: primaryBarcode,
+        additionalBarcodes: additionalBarcodes ?? item.additionalBarcodes,
+      );
+    }
     _inventoryChanged();
   }
+
+  InventoryScanResult resolveInventoryScan(String rawValue) =>
+      _inventory.resolveScan(rawValue);
+
+  bool addPantryBarcode(
+    PantryItem item,
+    String barcode, {
+    bool makePrimary = false,
+  }) {
+    final changed = _inventory.addBarcode(
+      item,
+      barcode,
+      makePrimary: makePrimary,
+    );
+    if (changed) _inventoryChanged();
+    return changed;
+  }
+
+  bool makePrimaryPantryBarcode(PantryItem item, String barcode) {
+    final changed = _inventory.makePrimaryBarcode(item, barcode);
+    if (changed) _inventoryChanged();
+    return changed;
+  }
+
+  bool removePantryBarcode(PantryItem item, String barcode) {
+    final changed = _inventory.removeBarcode(item, barcode);
+    if (changed) _inventoryChanged();
+    return changed;
+  }
+
+  String productQrPayload(PantryItem item) => _inventory.productQrPayload(item);
+
+  String batchQrPayload(PantryItem item, InventoryBatch batch) =>
+      _inventory.batchQrPayload(item, batch);
 
   void changePantryQuantity(PantryItem item, double delta) {
     _inventory.changeQuantity(item, delta);

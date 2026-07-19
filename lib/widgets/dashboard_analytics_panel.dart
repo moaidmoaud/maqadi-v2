@@ -391,6 +391,8 @@ class _SearchResults extends StatelessWidget {
     final details = <String>[
       result.item.category,
       ...result.matchedFields,
+      if (result.matchedBarcodes.isNotEmpty)
+        'الباركود: ${result.matchedBarcodes.join('، ')}',
       if (result.matchedBatchIds.isNotEmpty)
         'الدفعات: ${result.matchedBatchIds.join('، ')}',
     ];

@@ -1,5 +1,6 @@
 import 'dart:collection';
 
+import '../models/barcode_models.dart';
 import '../models/dashboard_analytics_models.dart';
 import '../models/expiry_models.dart';
 import '../models/inventory_models.dart';
@@ -407,12 +408,20 @@ class InventoryService {
     for (final item in _items) {
       final normalizedName = normalizeArabic(item.name);
       final normalizedCategory = normalizeArabic(item.category);
+      final barcodeValues = <String>[
+        if (item.primaryBarcode != null) item.primaryBarcode!,
+        ...item.additionalBarcodes,
+      ];
+      final normalizedBarcodes = {
+        for (final barcode in barcodeValues) barcode: normalizeArabic(barcode),
+      };
       final normalizedBatchIds = {
         for (final batch in item.batches) batch.id: normalizeArabic(batch.id),
       };
       final searchable = [
         normalizedName,
         normalizedCategory,
+        ...normalizedBarcodes.values,
         ...normalizedBatchIds.values,
       ].join(' ');
       if (!tokens.every(searchable.contains)) continue;
@@ -422,8 +431,14 @@ class InventoryService {
       if (tokens.any(normalizedCategory.contains)) {
         matchedFields.add('التصنيف');
       }
+      final matchedBarcodes = normalizedBarcodes.entries
+          .where((entry) => tokens.every(entry.value.contains))
+          .map((entry) => entry.key)
+          .toList()
+        ..sort();
+      if (matchedBarcodes.isNotEmpty) matchedFields.add('الباركود');
       final matchedBatchIds = normalizedBatchIds.entries
-          .where((entry) => tokens.any(entry.value.contains))
+          .where((entry) => tokens.every(entry.value.contains))
           .map((entry) => entry.key)
           .toList()
         ..sort();
@@ -432,6 +447,7 @@ class InventoryService {
         DashboardSearchResult(
           item: item,
           matchedFields: List.unmodifiable(matchedFields),
+          matchedBarcodes: List.unmodifiable(matchedBarcodes),
           matchedBatchIds: List.unmodifiable(matchedBatchIds),
         ),
       );
@@ -680,6 +696,203 @@ class InventoryService {
     return null;
   }
 
+  PantryItem? findByBarcode(String barcode) {
+    final key = _barcodeKey(barcode);
+    if (key.isEmpty) return null;
+    for (final item in _items) {
+      if (_barcodeKey(item.primaryBarcode ?? '') == key ||
+          item.additionalBarcodes.any((value) => _barcodeKey(value) == key)) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  void validateBarcodes({
+    PantryItem? item,
+    String? primaryBarcode,
+    Iterable<String> additionalBarcodes = const [],
+  }) {
+    final values = <String>[
+      if (_cleanBarcode(primaryBarcode) case final primary?) primary,
+      for (final value in additionalBarcodes)
+        if (_cleanBarcode(value) case final additional?) additional,
+    ];
+    for (final barcode in values) {
+      final owner = findByBarcode(barcode);
+      if (owner != null && !identical(owner, item)) {
+        throw ArgumentError.value(
+          barcode,
+          'barcode',
+          'الباركود مرتبط بالمنتج ${owner.name}',
+        );
+      }
+    }
+  }
+
+  bool setBarcodes(
+    PantryItem item, {
+    String? primaryBarcode,
+    Iterable<String> additionalBarcodes = const [],
+  }) {
+    _requireItem(item);
+    final primary = _cleanBarcode(primaryBarcode);
+    final additionalByKey = <String, String>{};
+    for (final value in additionalBarcodes) {
+      final clean = _cleanBarcode(value);
+      if (clean == null || _barcodeKey(clean) == _barcodeKey(primary ?? '')) {
+        continue;
+      }
+      additionalByKey.putIfAbsent(_barcodeKey(clean), () => clean);
+    }
+    validateBarcodes(
+      item: item,
+      primaryBarcode: primary,
+      additionalBarcodes: additionalByKey.values,
+    );
+    final unchanged = item.primaryBarcode == primary &&
+        _sameBarcodeList(item.additionalBarcodes, additionalByKey.values);
+    if (unchanged) return false;
+    item.primaryBarcode = primary;
+    item.additionalBarcodes
+      ..clear()
+      ..addAll(additionalByKey.values);
+    _recordMovement(item, 'تحديث باركود', 0);
+    return true;
+  }
+
+  bool addBarcode(
+    PantryItem item,
+    String barcode, {
+    bool makePrimary = false,
+  }) {
+    _requireItem(item);
+    final clean = _cleanBarcode(barcode);
+    if (clean == null) {
+      throw ArgumentError.value(barcode, 'barcode', 'الباركود فارغ');
+    }
+    final owner = findByBarcode(clean);
+    if (owner != null) {
+      if (identical(owner, item)) return false;
+      throw ArgumentError.value(
+        barcode,
+        'barcode',
+        'الباركود مرتبط بالمنتج ${owner.name}',
+      );
+    }
+    final oldPrimary = item.primaryBarcode;
+    if (makePrimary || oldPrimary == null) {
+      return setBarcodes(
+        item,
+        primaryBarcode: clean,
+        additionalBarcodes: [
+          if (oldPrimary != null) oldPrimary,
+          ...item.additionalBarcodes,
+        ],
+      );
+    }
+    return setBarcodes(
+      item,
+      primaryBarcode: oldPrimary,
+      additionalBarcodes: [...item.additionalBarcodes, clean],
+    );
+  }
+
+  bool makePrimaryBarcode(PantryItem item, String barcode) {
+    _requireItem(item);
+    final clean = _cleanBarcode(barcode);
+    if (clean == null || !identical(findByBarcode(clean), item)) return false;
+    final currentPrimary = item.primaryBarcode;
+    if (_barcodeKey(currentPrimary ?? '') == _barcodeKey(clean)) return false;
+    return setBarcodes(
+      item,
+      primaryBarcode: clean,
+      additionalBarcodes: [
+        if (currentPrimary != null) currentPrimary,
+        ...item.additionalBarcodes.where(
+          (value) => _barcodeKey(value) != _barcodeKey(clean),
+        ),
+      ],
+    );
+  }
+
+  bool removeBarcode(PantryItem item, String barcode) {
+    _requireItem(item);
+    final key = _barcodeKey(barcode);
+    if (key.isEmpty || !identical(findByBarcode(barcode), item)) return false;
+    return setBarcodes(
+      item,
+      primaryBarcode: _barcodeKey(item.primaryBarcode ?? '') == key
+          ? null
+          : item.primaryBarcode,
+      additionalBarcodes: item.additionalBarcodes.where(
+        (value) => _barcodeKey(value) != key,
+      ),
+    );
+  }
+
+  String productQrPayload(PantryItem item) {
+    _requireItem(item);
+    return Uri(
+      scheme: 'maqadi',
+      host: 'product',
+      pathSegments: [item.id],
+    ).toString();
+  }
+
+  String batchQrPayload(PantryItem item, InventoryBatch batch) {
+    _requireBatch(item, batch);
+    return Uri(
+      scheme: 'maqadi',
+      host: 'product',
+      pathSegments: [item.id, 'batch', batch.id],
+    ).toString();
+  }
+
+  InventoryQrTarget? resolveInternalQr(String value) {
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null || uri.scheme != 'maqadi' || uri.host != 'product') {
+      return null;
+    }
+    final segments = uri.pathSegments;
+    if (segments.isEmpty) return null;
+    final item = _findById(segments.first);
+    if (item == null) return null;
+    if (segments.length == 1) return InventoryQrTarget(item: item);
+    if (segments.length != 3 || segments[1] != 'batch') return null;
+    for (final batch in item.batches) {
+      if (batch.id == segments[2]) {
+        return InventoryQrTarget(item: item, batch: batch);
+      }
+    }
+    return null;
+  }
+
+  InventoryScanResult resolveScan(String rawValue) {
+    final value = rawValue.trim();
+    final qrTarget = resolveInternalQr(value);
+    if (qrTarget != null) {
+      return InventoryScanResult(
+        type: InventoryScanResultType.internalQr,
+        rawValue: value,
+        item: qrTarget.item,
+        batch: qrTarget.batch,
+      );
+    }
+    final barcodeItem = findByBarcode(value);
+    if (barcodeItem != null) {
+      return InventoryScanResult(
+        type: InventoryScanResultType.barcode,
+        rawValue: value,
+        item: barcodeItem,
+      );
+    }
+    return InventoryScanResult(
+      type: InventoryScanResultType.unknown,
+      rawValue: value,
+    );
+  }
+
   ProductAnalyticsInsight _analyticsInsightFor(PantryItem item) {
     DateTime? addedAt;
     DateTime? updatedAt;
@@ -723,13 +936,41 @@ class InventoryService {
     if (tokens.every(name.contains)) return 0;
     final category = normalizeArabic(item.category);
     if (tokens.every(category.contains)) return 1;
+    final barcodes = [
+      if (item.primaryBarcode != null) item.primaryBarcode!,
+      ...item.additionalBarcodes,
+    ];
+    if (barcodes.any((barcode) {
+      final key = normalizeArabic(barcode);
+      return tokens.every(key.contains);
+    })) {
+      return 2;
+    }
     if (item.batches.any((batch) {
       final id = normalizeArabic(batch.id);
       return tokens.every(id.contains);
     })) {
-      return 2;
+      return 3;
     }
-    return 3;
+    return 4;
+  }
+
+  String? _cleanBarcode(String? value) {
+    final clean = value?.trim().replaceAll(RegExp(r'\s+'), '') ?? '';
+    return clean.isEmpty ? null : clean;
+  }
+
+  String _barcodeKey(String value) =>
+      value.trim().replaceAll(RegExp(r'\s+'), '').toUpperCase();
+
+  bool _sameBarcodeList(Iterable<String> a, Iterable<String> b) {
+    final aKeys = a.map(_barcodeKey).toList();
+    final bKeys = b.map(_barcodeKey).toList();
+    if (aKeys.length != bKeys.length) return false;
+    for (var index = 0; index < aKeys.length; index++) {
+      if (aKeys[index] != bKeys[index]) return false;
+    }
+    return true;
   }
 
   PantryItem? _pantryItemFor(GroceryItem grocery) {
