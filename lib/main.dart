@@ -14,6 +14,7 @@ import 'products.dart';
 import 'screens/batch_management_screen.dart';
 import 'screens/barcode_scanner_screen.dart';
 import 'screens/expiry_list_screen.dart';
+import 'screens/purchase_list_screen.dart';
 import 'screens/reports_screen.dart';
 import 'utils/arabic_text.dart';
 import 'widgets/dashboard_analytics_panel.dart';
@@ -241,9 +242,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final value = await Navigator.push<String>(
       context,
       MaterialPageRoute<String>(
-        builder: (_) => BarcodeScannerScreen(
-          scannerBuilder: widget.scannerBuilder,
-        ),
+        builder: (_) =>
+            BarcodeScannerScreen(scannerBuilder: widget.scannerBuilder),
       ),
     );
     if (value == null || !mounted) return;
@@ -319,6 +319,16 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
 
+  void _openPurchases() => Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: PurchaseListScreen(service: widget.store.purchaseService),
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final last = widget.store.lastList;
@@ -333,6 +343,12 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('open-purchases'),
+            tooltip: 'سجل المشتريات',
+            onPressed: _openPurchases,
+            icon: const Icon(Icons.receipt_long_outlined),
+          ),
           IconButton(
             key: const ValueKey('open-reports'),
             tooltip: 'التقارير والتصدير',

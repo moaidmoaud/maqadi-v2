@@ -1,6 +1,7 @@
 import '../models/inventory_models.dart';
 import '../models/purchase_models.dart';
 import '../repositories/purchase_repository.dart';
+import '../utils/arabic_text.dart';
 import 'inventory_service.dart';
 
 typedef PurchaseClock = DateTime Function();
@@ -21,6 +22,59 @@ class PurchaseService {
   final InventoryService _inventory;
   final PurchaseClock _clock;
   final InventoryChangePersister? _persistInventory;
+  int _idCounter = 0;
+
+  List<PurchaseProductOption> availableProducts() => _inventory.items
+      .map(
+        (item) => PurchaseProductOption(
+          id: item.id,
+          name: item.name,
+          category: item.category,
+          unit: item.unit,
+        ),
+      )
+      .toList()
+    ..sort((a, b) => a.name.compareTo(b.name));
+
+  String productNameFor(String productId) =>
+      _inventory.findById(productId)?.name ?? productId;
+
+  String newPurchaseId() => _newId('purchase');
+
+  PurchaseItem createDraftItem(String productId, {String purchaseId = ''}) {
+    if (_inventory.findById(productId) == null) {
+      throw ArgumentError.value(
+        productId,
+        'productId',
+        'Product does not exist in inventory.',
+      );
+    }
+    return PurchaseItem(
+      id: _newId('purchase-item'),
+      purchaseId: purchaseId,
+      productId: productId,
+      quantity: 1,
+      unitPrice: 0,
+      finalUnitPrice: 0,
+      lineTotal: 0,
+    );
+  }
+
+  PurchaseTotals previewTotals(
+    Iterable<PurchaseItem> items, {
+    required double discount,
+    required double tax,
+  }) {
+    final itemList = items.toList();
+    _validateAmountInput(itemList, discount: discount, tax: tax);
+    final subtotal = calculateSubtotal(itemList);
+    return PurchaseTotals(
+      subtotal: subtotal,
+      discount: _money(discount),
+      tax: _money(tax),
+      total: _money(subtotal - discount + tax),
+    );
+  }
 
   double calculateSubtotal(Iterable<PurchaseItem> items) => _money(
         items.fold<double>(
@@ -62,20 +116,42 @@ class PurchaseService {
     required DateTime purchaseDate,
     required List<PurchaseItem> items,
     double taxRate = 0,
+    double? discountAmount,
+    double? taxAmount,
     String? notes,
   }) async {
     final now = _clock();
-    final normalizedItems = _normalizeItems(id, items);
-    final purchase = _buildPurchase(
-      id: id,
-      storeId: storeId,
-      purchaseDate: purchaseDate,
-      items: normalizedItems,
-      taxRate: taxRate,
-      notes: notes,
-      createdAt: now,
-      updatedAt: now,
-    );
+    final usesAmounts = discountAmount != null || taxAmount != null;
+    final normalizedItems = usesAmounts
+        ? _itemsWithDiscount(
+            id,
+            items,
+            discount: discountAmount ?? 0,
+            tax: taxAmount ?? 0,
+          )
+        : _normalizeItems(id, items);
+    final purchase = usesAmounts
+        ? _buildPurchaseWithAmounts(
+            id: id,
+            storeId: storeId,
+            purchaseDate: purchaseDate,
+            items: normalizedItems,
+            discount: discountAmount ?? 0,
+            tax: taxAmount ?? 0,
+            notes: notes,
+            createdAt: now,
+            updatedAt: now,
+          )
+        : _buildPurchase(
+            id: id,
+            storeId: storeId,
+            purchaseDate: purchaseDate,
+            items: normalizedItems,
+            taxRate: taxRate,
+            notes: notes,
+            createdAt: now,
+            updatedAt: now,
+          );
     validatePurchase(purchase, normalizedItems);
     _validateInventoryTargets(normalizedItems);
 
@@ -115,24 +191,46 @@ class PurchaseService {
   Future<Purchase> updatePurchase({
     required Purchase purchase,
     required List<PurchaseItem> items,
-    required double taxRate,
+    double taxRate = 0,
+    double? discountAmount,
+    double? taxAmount,
   }) async {
     final existing = await _repository.readPurchase(purchase.id);
     if (existing == null) {
       throw StateError('Purchase ${purchase.id} does not exist.');
     }
     final existingItems = await _repository.readPurchaseDetails(purchase.id);
-    final normalizedItems = _normalizeItems(purchase.id, items);
-    final updated = _buildPurchase(
-      id: purchase.id,
-      storeId: purchase.storeId,
-      purchaseDate: purchase.purchaseDate,
-      items: normalizedItems,
-      taxRate: taxRate,
-      notes: purchase.notes,
-      createdAt: existing.createdAt,
-      updatedAt: _clock(),
-    );
+    final usesAmounts = discountAmount != null || taxAmount != null;
+    final normalizedItems = usesAmounts
+        ? _itemsWithDiscount(
+            purchase.id,
+            items,
+            discount: discountAmount ?? 0,
+            tax: taxAmount ?? 0,
+          )
+        : _normalizeItems(purchase.id, items);
+    final updated = usesAmounts
+        ? _buildPurchaseWithAmounts(
+            id: purchase.id,
+            storeId: purchase.storeId,
+            purchaseDate: purchase.purchaseDate,
+            items: normalizedItems,
+            discount: discountAmount ?? 0,
+            tax: taxAmount ?? 0,
+            notes: purchase.notes,
+            createdAt: existing.createdAt,
+            updatedAt: _clock(),
+          )
+        : _buildPurchase(
+            id: purchase.id,
+            storeId: purchase.storeId,
+            purchaseDate: purchase.purchaseDate,
+            items: normalizedItems,
+            taxRate: taxRate,
+            notes: purchase.notes,
+            createdAt: existing.createdAt,
+            updatedAt: _clock(),
+          );
     validatePurchase(updated, normalizedItems);
     _validateInventoryTargets(normalizedItems, replacing: existingItems);
 
@@ -159,6 +257,98 @@ class PurchaseService {
     }
     await _repository.deletePurchase(purchaseId);
     await _persistInventory?.call();
+  }
+
+  Future<void> deletePurchaseSafely(String purchaseId) async {
+    final purchase = await _repository.readPurchase(purchaseId);
+    if (purchase == null) return;
+    final items = await _repository.readPurchaseDetails(purchaseId);
+    for (final item in items) {
+      final pantryItem = _inventory.findById(item.productId);
+      final batchId = item.batchId;
+      if (pantryItem == null || batchId == null) {
+        throw const PurchaseDeletionException(
+          'لا يمكن حذف عملية الشراء لأن مخزونها لم يعد قابلًا للعكس بأمان.',
+        );
+      }
+      final batch = _inventory.findBatchById(pantryItem, batchId);
+      if (batch == null || (batch.quantity - item.quantity).abs() > 0.000001) {
+        throw const PurchaseDeletionException(
+          'لا يمكن حذف عملية الشراء بعد استهلاك أو تعديل إحدى دفعاتها.',
+        );
+      }
+    }
+    await deletePurchase(purchaseId);
+  }
+
+  Future<List<String>> readStoreIds() async {
+    final purchases = await _repository.readPurchaseHistory();
+    final stores = purchases
+        .map((purchase) => purchase.storeId.trim())
+        .where((store) => store.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.compareTo(b));
+    return stores;
+  }
+
+  Future<List<PurchaseListEntry>> searchPurchases({
+    String query = '',
+    String? storeId,
+    DateTime? date,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    if (startDate != null &&
+        endDate != null &&
+        _dateOnly(startDate).isAfter(_dateOnly(endDate))) {
+      throw ArgumentError('Start date cannot be after end date.');
+    }
+    final normalizedQuery = normalizeArabic(query.trim());
+    final normalizedStore = normalizeArabic(storeId?.trim() ?? '');
+    final history = await _repository.readPurchaseHistory();
+    final entries = <PurchaseListEntry>[];
+    for (final purchase in history) {
+      if (normalizedStore.isNotEmpty &&
+          normalizeArabic(purchase.storeId) != normalizedStore) {
+        continue;
+      }
+      final purchaseDay = _dateOnly(purchase.purchaseDate);
+      if (date != null && purchaseDay != _dateOnly(date)) continue;
+      if (date == null &&
+          startDate != null &&
+          purchaseDay.isBefore(_dateOnly(startDate))) {
+        continue;
+      }
+      if (date == null &&
+          endDate != null &&
+          purchaseDay.isAfter(_dateOnly(endDate))) {
+        continue;
+      }
+      final items = await _repository.readPurchaseDetails(purchase.id);
+      if (normalizedQuery.isNotEmpty &&
+          !_purchaseMatches(purchase, items, normalizedQuery)) {
+        continue;
+      }
+      entries.add(
+        PurchaseListEntry(purchase: purchase, itemCount: items.length),
+      );
+    }
+    entries.sort(
+      (a, b) => b.purchase.purchaseDate.compareTo(a.purchase.purchaseDate),
+    );
+    return entries;
+  }
+
+  Future<PurchaseDetails?> readPurchaseWithDetails(String purchaseId) async {
+    final purchase = await _repository.readPurchase(purchaseId);
+    if (purchase == null) return null;
+    return PurchaseDetails(
+      purchase: purchase,
+      items: List.unmodifiable(
+        await _repository.readPurchaseDetails(purchaseId),
+      ),
+    );
   }
 
   void validatePurchase(Purchase purchase, List<PurchaseItem> items) {
@@ -245,6 +435,55 @@ class PurchaseService {
   Future<List<PurchaseItem>> readPurchaseDetails(String purchaseId) =>
       _repository.readPurchaseDetails(purchaseId);
 
+  bool _purchaseMatches(
+    Purchase purchase,
+    Iterable<PurchaseItem> items,
+    String normalizedQuery,
+  ) {
+    final values = <String>[
+      purchase.id,
+      purchase.storeId,
+      purchase.notes ?? '',
+      for (final item in items) ...[
+        item.productId,
+        productNameFor(item.productId),
+        item.batchId ?? '',
+      ],
+    ];
+    return values.any(
+      (value) => normalizeArabic(value).contains(normalizedQuery),
+    );
+  }
+
+  Purchase _buildPurchaseWithAmounts({
+    required String id,
+    required String storeId,
+    required DateTime purchaseDate,
+    required List<PurchaseItem> items,
+    required double discount,
+    required double tax,
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    String? notes,
+  }) {
+    if (storeId.trim().isEmpty) {
+      throw const PurchaseValidationException('المتجر مطلوب.');
+    }
+    final totals = previewTotals(items, discount: discount, tax: tax);
+    return Purchase(
+      id: id.trim(),
+      storeId: storeId.trim(),
+      purchaseDate: purchaseDate,
+      subtotal: totals.subtotal,
+      discount: totals.discount,
+      tax: totals.tax,
+      total: totals.total,
+      notes: _clean(notes),
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+    );
+  }
+
   Purchase _buildPurchase({
     required String id,
     required String storeId,
@@ -287,6 +526,79 @@ class PurchaseService {
             ),
           )
           .toList();
+
+  List<PurchaseItem> _itemsWithDiscount(
+    String purchaseId,
+    Iterable<PurchaseItem> items, {
+    required double discount,
+    required double tax,
+  }) {
+    final source = items.toList();
+    _validateAmountInput(source, discount: discount, tax: tax);
+    final subtotal = calculateSubtotal(source);
+    final discountedTotal = _money(subtotal - discount);
+    var allocatedTotal = 0.0;
+    final result = <PurchaseItem>[];
+    for (var index = 0; index < source.length; index++) {
+      final item = source[index];
+      final gross = _money(item.quantity * item.unitPrice);
+      final lineTotal = index == source.length - 1
+          ? _money(discountedTotal - allocatedTotal)
+          : _money(gross - (subtotal == 0 ? 0 : discount * (gross / subtotal)));
+      allocatedTotal = _money(allocatedTotal + lineTotal);
+      result.add(
+        item.copyWith(
+          purchaseId: purchaseId.trim(),
+          finalUnitPrice:
+              item.quantity == 0 ? item.unitPrice : lineTotal / item.quantity,
+          lineTotal: lineTotal,
+          batchId: _clean(item.batchId),
+          clearBatchId: _clean(item.batchId) == null,
+        ),
+      );
+    }
+    return result;
+  }
+
+  void _validateAmountInput(
+    List<PurchaseItem> items, {
+    required double discount,
+    required double tax,
+  }) {
+    if (items.isEmpty) {
+      throw const PurchaseValidationException('يجب إضافة منتج واحد على الأقل.');
+    }
+    final ids = <String>{};
+    for (final item in items) {
+      if (item.id.trim().isEmpty || !ids.add(item.id)) {
+        throw const PurchaseValidationException(
+          'تعذر حفظ عناصر الشراء بسبب معرّف غير صالح.',
+        );
+      }
+      if (item.productId.trim().isEmpty) {
+        throw const PurchaseValidationException('المنتج مطلوب.');
+      }
+      if (!item.quantity.isFinite || item.quantity <= 0) {
+        throw const PurchaseValidationException(
+          'يجب أن تكون كمية كل منتج أكبر من صفر.',
+        );
+      }
+      if (!item.unitPrice.isFinite || item.unitPrice < 0) {
+        throw const PurchaseValidationException(
+          'يجب ألا يكون سعر الوحدة سالبًا.',
+        );
+      }
+    }
+    final subtotal = calculateSubtotal(items);
+    if (!discount.isFinite || discount < 0 || discount > subtotal) {
+      throw const PurchaseValidationException(
+        'يجب أن يكون الخصم بين صفر والإجمالي الفرعي.',
+      );
+    }
+    if (!tax.isFinite || tax < 0) {
+      throw const PurchaseValidationException('يجب ألا تكون الضريبة سالبة.');
+    }
+  }
 
   void _validateInventoryTargets(
     Iterable<PurchaseItem> items, {
@@ -429,6 +741,14 @@ class PurchaseService {
     final clean = value?.trim() ?? '';
     return clean.isEmpty ? null : clean;
   }
+
+  DateTime _dateOnly(DateTime value) =>
+      DateTime(value.year, value.month, value.day);
+
+  String _newId(String prefix) {
+    _idCounter++;
+    return '${prefix}_${_clock().microsecondsSinceEpoch}_$_idCounter';
+  }
 }
 
 class _AddedPurchaseBatch {
@@ -436,4 +756,22 @@ class _AddedPurchaseBatch {
 
   final PantryItem item;
   final InventoryBatch batch;
+}
+
+class PurchaseValidationException implements Exception {
+  const PurchaseValidationException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+class PurchaseDeletionException implements Exception {
+  const PurchaseDeletionException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }

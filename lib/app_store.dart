@@ -12,10 +12,13 @@ import 'models/shopping_models.dart';
 import 'models/stock_models.dart';
 import 'products.dart';
 import 'repositories/app_repository.dart';
+import 'repositories/purchase_repository.dart';
 import 'repositories/shared_preferences_app_repository.dart';
+import 'repositories/shared_preferences_purchase_repository.dart';
 import 'services/inventory_service.dart';
 import 'services/local_notification_scheduler.dart';
 import 'services/notification_scheduler.dart';
+import 'services/purchase_service.dart';
 import 'services/report_delivery.dart';
 import 'services/report_service.dart';
 import 'utils/arabic_text.dart';
@@ -23,6 +26,8 @@ import 'utils/arabic_text.dart';
 class AppStore extends ChangeNotifier {
   AppStore({
     AppRepository? repository,
+    PurchaseRepository? purchaseRepository,
+    PurchaseService? purchaseService,
     InventoryService? inventoryService,
     NotificationScheduler? notificationScheduler,
     ReportGenerator? reportGenerator,
@@ -34,6 +39,13 @@ class AppStore extends ChangeNotifier {
     _reportGenerator =
         reportGenerator ?? ReportService(inventoryService: _inventory);
     _reportDelivery = reportDelivery ?? const PlatformReportDelivery();
+    _purchaseService = purchaseService ??
+        PurchaseService(
+          repository:
+              purchaseRepository ?? SharedPreferencesPurchaseRepository(),
+          inventoryService: _inventory,
+          persistInventory: _persistPurchaseInventory,
+        );
   }
 
   final AppRepository _repository;
@@ -41,6 +53,7 @@ class AppStore extends ChangeNotifier {
   final NotificationScheduler _notificationScheduler;
   late final ReportGenerator _reportGenerator;
   late final ReportDelivery _reportDelivery;
+  late final PurchaseService _purchaseService;
   final List<ShoppingListModel> lists = [];
   final Set<String> favorites = {};
   final Map<String, int> frequency = {};
@@ -55,6 +68,7 @@ class AppStore extends ChangeNotifier {
   List<PantryItem> get pantry => _inventory.items;
   List<PantryMovement> get pantryMovements => _inventory.movements;
   List<String> get reportCategories => _reportGenerator.categories;
+  PurchaseService get purchaseService => _purchaseService;
 
   Future<GeneratedReportFile> generatePdfReport(
     PdfReportType type, {
@@ -662,6 +676,13 @@ class AppStore extends ChangeNotifier {
   void _inventoryChanged() {
     _synchronizeAutomaticShoppingList();
     _changed();
+    unawaited(_synchronizeNotifications());
+  }
+
+  Future<void> _persistPurchaseInventory() async {
+    _synchronizeAutomaticShoppingList();
+    await save();
+    notifyListeners();
     unawaited(_synchronizeNotifications());
   }
 

@@ -198,6 +198,48 @@ class PurchaseItem {
       );
 }
 
+class PurchaseTotals {
+  const PurchaseTotals({
+    required this.subtotal,
+    required this.discount,
+    required this.tax,
+    required this.total,
+  });
+
+  final double subtotal;
+  final double discount;
+  final double tax;
+  final double total;
+}
+
+class PurchaseListEntry {
+  const PurchaseListEntry({required this.purchase, required this.itemCount});
+
+  final Purchase purchase;
+  final int itemCount;
+}
+
+class PurchaseDetails {
+  const PurchaseDetails({required this.purchase, required this.items});
+
+  final Purchase purchase;
+  final List<PurchaseItem> items;
+}
+
+class PurchaseProductOption {
+  const PurchaseProductOption({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.unit,
+  });
+
+  final String id;
+  final String name;
+  final String category;
+  final String unit;
+}
+
 double _doubleFromJson(Object? value) => value is num ? value.toDouble() : 0;
 
 DateTime _dateFromJson(Object? value) =>
