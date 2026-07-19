@@ -80,6 +80,80 @@ void main() {
       expect(service.movements.last.type, 'تعديل');
       expect(service.movements.last.amount, -4);
     });
+
+    test('batch management keeps totals and FIFO order in the service', () {
+      var id = 0;
+      final service = InventoryService(idFactory: () => 'id_${++id}');
+      final item = service.addStock(
+        name: 'قهوة',
+        category: 'المشروبات',
+        quantity: 0,
+        minimum: 1,
+        unit: 'كجم',
+        location: 'المخزن',
+      );
+      final newer = service.addBatch(
+        item,
+        quantity: 3,
+        receivedAt: DateTime.utc(2026, 2, 1),
+        batchId: 'february',
+      );
+      final older = service.addBatch(
+        item,
+        quantity: 2,
+        receivedAt: DateTime.utc(2026, 1, 1),
+        expiresAt: DateTime.utc(2027, 1, 1),
+        batchId: 'january',
+        note: 'عرض خاص',
+      );
+
+      expect(item.quantity, 5);
+      expect(service.batchesFor(item), [older, newer]);
+
+      service.updateBatch(
+        item,
+        older,
+        quantity: 4,
+        receivedAt: DateTime.utc(2026, 3, 1),
+        expiresAt: DateTime.utc(2027, 3, 1),
+        batchId: 'march',
+        note: 'تم تحديثها',
+      );
+
+      expect(item.quantity, 7);
+      expect(older.id, 'march');
+      expect(older.note, 'تم تحديثها');
+      expect(service.batchesFor(item), [newer, older]);
+      expect(service.movements.last.type, 'تعديل دفعة');
+      expect(service.movements.last.amount, 2);
+      expect(service.movements.last.batchAllocations, {'march': 2});
+
+      service.deleteBatch(item, newer);
+
+      expect(item.quantity, 4);
+      expect(service.batchesFor(item), [older]);
+      expect(service.movements.last.type, 'حذف دفعة');
+      expect(service.movements.last.amount, -3);
+      expect(service.movements.last.batchAllocations, {'february': -3});
+    });
+
+    test('rejects duplicate custom batch identifiers', () {
+      final service = InventoryService();
+      final item = service.addStock(
+        name: 'تمر',
+        category: 'الحبوب',
+        quantity: 0,
+        minimum: 1,
+        unit: 'علبة',
+        location: 'المخزن',
+      );
+      service.addBatch(item, quantity: 1, batchId: 'lot-1');
+
+      expect(
+        () => service.addBatch(item, quantity: 2, batchId: 'lot-1'),
+        throwsArgumentError,
+      );
+    });
   });
 
   test('legacy pantry JSON migrates quantity into an opening batch', () {

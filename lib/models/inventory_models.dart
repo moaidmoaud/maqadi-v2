@@ -7,11 +7,11 @@ class InventoryBatch {
     this.note,
   });
 
-  final String id;
+  String id;
   double quantity;
-  final DateTime receivedAt;
-  final DateTime? expiresAt;
-  final String? note;
+  DateTime receivedAt;
+  DateTime? expiresAt;
+  String? note;
 
   Map<String, dynamic> toJson() => {
     'id': id,

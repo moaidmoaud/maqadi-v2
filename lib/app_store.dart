@@ -297,6 +297,9 @@ class AppStore extends ChangeNotifier {
   List<PantryMovement> movementsFor(PantryItem item) =>
       _inventory.movementsFor(item);
 
+  List<InventoryBatch> batchesFor(PantryItem item) =>
+      _inventory.batchesFor(item);
+
   int putPurchasedItemsInPantry(ShoppingListModel list) {
     final purchased = list.items.where((item) => item.done).toList();
     if (purchased.isEmpty) return 0;
@@ -364,6 +367,52 @@ class AppStore extends ChangeNotifier {
 
   void changePantryQuantity(PantryItem item, double delta) {
     _inventory.changeQuantity(item, delta);
+    _changed();
+  }
+
+  InventoryBatch addPantryBatch(
+    PantryItem item, {
+    required double quantity,
+    required DateTime purchasedAt,
+    DateTime? expiresAt,
+    String? batchId,
+    String? note,
+  }) {
+    final batch = _inventory.addBatch(
+      item,
+      quantity: quantity,
+      receivedAt: purchasedAt,
+      expiresAt: expiresAt,
+      batchId: batchId,
+      note: note,
+    );
+    _changed();
+    return batch;
+  }
+
+  void updatePantryBatch(
+    PantryItem item,
+    InventoryBatch batch, {
+    required double quantity,
+    required DateTime purchasedAt,
+    DateTime? expiresAt,
+    String? batchId,
+    String? note,
+  }) {
+    _inventory.updateBatch(
+      item,
+      batch,
+      quantity: quantity,
+      receivedAt: purchasedAt,
+      expiresAt: expiresAt,
+      batchId: batchId,
+      note: note,
+    );
+    _changed();
+  }
+
+  void deletePantryBatch(PantryItem item, InventoryBatch batch) {
+    _inventory.deleteBatch(item, batch);
     _changed();
   }
 

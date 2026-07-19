@@ -77,4 +77,54 @@ void main() {
     expect(data.favorites, {'أرز'});
     expect(data.frequency, {'أرز': 2});
   });
+
+  test('round-trips batch metadata and the legacy quantity field', () async {
+    SharedPreferences.setMockInitialValues({
+      SharedPreferencesAppRepository.pantryKey: jsonEncode([
+        {
+          'id': 'pantry-2',
+          'name': 'قهوة',
+          'category': 'المشروبات',
+          'quantity': 3,
+          'minimum': 1,
+          'unit': 'كجم',
+          'location': 'المخزن',
+          'batches': [
+            {
+              'id': 'lot-2026',
+              'quantity': 3,
+              'receivedAt': '2026-04-10T00:00:00.000Z',
+              'expiresAt': '2027-04-10T00:00:00.000Z',
+              'note': 'الدفعة الأولى',
+            },
+          ],
+        },
+      ]),
+    });
+    final repository = SharedPreferencesAppRepository();
+
+    final loaded = await repository.load();
+    final batch = loaded.pantry.single.batches.single;
+
+    expect(batch.id, 'lot-2026');
+    expect(batch.quantity, 3);
+    expect(batch.receivedAt, DateTime.parse('2026-04-10T00:00:00.000Z'));
+    expect(batch.expiresAt, DateTime.parse('2027-04-10T00:00:00.000Z'));
+    expect(batch.note, 'الدفعة الأولى');
+
+    await repository.save(loaded);
+    final prefs = await SharedPreferences.getInstance();
+    final savedPantry =
+        jsonDecode(prefs.getString(SharedPreferencesAppRepository.pantryKey)!)
+            as List<dynamic>;
+    final savedItem = Map<String, dynamic>.from(savedPantry.single as Map);
+    final savedBatch = Map<String, dynamic>.from(
+      (savedItem['batches'] as List<dynamic>).single as Map,
+    );
+
+    expect(savedItem['quantity'], 3);
+    expect(savedBatch['id'], 'lot-2026');
+    expect(savedBatch['expiresAt'], '2027-04-10T00:00:00.000Z');
+    expect(savedBatch['note'], 'الدفعة الأولى');
+  });
 }

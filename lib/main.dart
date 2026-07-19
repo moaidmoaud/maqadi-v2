@@ -8,6 +8,7 @@ import 'app_store.dart';
 import 'models/inventory_models.dart';
 import 'models/shopping_models.dart';
 import 'products.dart';
+import 'screens/batch_management_screen.dart';
 import 'utils/arabic_text.dart';
 
 void main() => runApp(const MaqadiApp());
@@ -963,12 +964,27 @@ class _PantryScreenState extends State<PantryScreen> {
                                 ),
                                 PopupMenuButton<String>(
                                   onSelected: (v) {
+                                    if (v == 'batches') {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => BatchManagementScreen(
+                                            store: widget.store,
+                                            item: item,
+                                          ),
+                                        ),
+                                      );
+                                    }
                                     if (v == 'edit') _showEditor(item);
                                     if (v == 'history') _showHistory(item);
                                     if (v == 'delete')
                                       widget.store.deletePantryItem(item);
                                   },
                                   itemBuilder: (_) => const [
+                                    PopupMenuItem(
+                                      value: 'batches',
+                                      child: Text('إدارة الدفعات'),
+                                    ),
                                     PopupMenuItem(
                                       value: 'history',
                                       child: Text('سجل الحركة'),

@@ -70,6 +70,13 @@ class InventoryService {
     return result;
   }
 
+  List<InventoryBatch> batchesFor(PantryItem item) {
+    _requireItem(item);
+    final result = item.batches.where((batch) => batch.quantity > 0).toList()
+      ..sort(_compareBatches);
+    return List.unmodifiable(result);
+  }
+
   PantryItem addStock({
     required String name,
     required String category,
@@ -130,13 +137,23 @@ class InventoryService {
     required double quantity,
     DateTime? receivedAt,
     DateTime? expiresAt,
+    String? batchId,
     String? note,
     String movementType = 'إضافة',
   }) {
     final cleanQuantity = quantity.clamp(0, 999999).toDouble();
+    if (cleanQuantity <= 0) {
+      throw ArgumentError.value(
+        quantity,
+        'quantity',
+        'يجب أن تكون الكمية أكبر من صفر',
+      );
+    }
+    _requireItem(item);
     final batch = _appendBatch(
       item,
       cleanQuantity,
+      id: _resolveBatchId(item, batchId),
       receivedAt: receivedAt,
       expiresAt: expiresAt,
       note: note,
@@ -149,6 +166,63 @@ class InventoryService {
       batchAllocations: {batch.id: cleanQuantity},
     );
     return batch;
+  }
+
+  void updateBatch(
+    PantryItem item,
+    InventoryBatch batch, {
+    required double quantity,
+    required DateTime receivedAt,
+    DateTime? expiresAt,
+    String? batchId,
+    String? note,
+  }) {
+    _requireBatch(item, batch);
+    final cleanQuantity = quantity.clamp(0, 999999).toDouble();
+    if (cleanQuantity <= 0) {
+      throw ArgumentError.value(
+        quantity,
+        'quantity',
+        'يجب أن تكون الكمية أكبر من صفر',
+      );
+    }
+    final previousQuantity = batch.quantity;
+    final resolvedId = _resolveBatchId(item, batchId, currentBatch: batch);
+
+    batch
+      ..id = resolvedId
+      ..quantity = cleanQuantity
+      ..receivedAt = receivedAt
+      ..expiresAt = expiresAt
+      ..note = _cleanOptionalText(note);
+
+    final delta = cleanQuantity - previousQuantity;
+    if (delta != 0) {
+      _recordMovement(
+        item,
+        'تعديل دفعة',
+        delta,
+        note: batch.note,
+        batchAllocations: {resolvedId: delta},
+      );
+    }
+  }
+
+  void deleteBatch(PantryItem item, InventoryBatch batch) {
+    _requireBatch(item, batch);
+    final removedQuantity = batch.quantity;
+    final batchId = batch.id;
+    final note = batch.note;
+    item.batches.remove(batch);
+    if (removedQuantity > 0) {
+      _recordMovement(
+        item,
+        'حذف دفعة',
+        -removedQuantity,
+        note: note,
+        batchAllocations: {batchId: -removedQuantity},
+      );
+    }
   }
 
   double consume(
@@ -241,16 +315,17 @@ class InventoryService {
   InventoryBatch _appendBatch(
     PantryItem item,
     double quantity, {
+    String? id,
     DateTime? receivedAt,
     DateTime? expiresAt,
     String? note,
   }) {
     final batch = InventoryBatch(
-      id: _newId(),
+      id: id ?? _resolveBatchId(item, null),
       quantity: quantity.clamp(0, 999999).toDouble(),
       receivedAt: receivedAt ?? _clock(),
       expiresAt: expiresAt,
-      note: note,
+      note: _cleanOptionalText(note),
     );
     item.batches.add(batch);
     return batch;
@@ -260,10 +335,7 @@ class InventoryService {
     var remaining = quantity;
     final allocations = <String, double>{};
     final ordered = item.batches.where((batch) => batch.quantity > 0).toList()
-      ..sort((a, b) {
-        final byDate = a.receivedAt.compareTo(b.receivedAt);
-        return byDate != 0 ? byDate : a.id.compareTo(b.id);
-      });
+      ..sort(_compareBatches);
 
     for (final batch in ordered) {
       if (remaining <= 0) break;
@@ -274,6 +346,60 @@ class InventoryService {
     }
     item.batches.removeWhere((batch) => batch.quantity <= 0);
     return allocations;
+  }
+
+  int _compareBatches(InventoryBatch a, InventoryBatch b) {
+    final byDate = a.receivedAt.compareTo(b.receivedAt);
+    return byDate != 0 ? byDate : a.id.compareTo(b.id);
+  }
+
+  String _resolveBatchId(
+    PantryItem item,
+    String? requestedId, {
+    InventoryBatch? currentBatch,
+  }) {
+    final requested = requestedId?.trim() ?? '';
+    if (requested.isNotEmpty) {
+      final duplicate = item.batches.any(
+        (batch) => !identical(batch, currentBatch) && batch.id == requested,
+      );
+      if (duplicate) {
+        throw ArgumentError.value(
+          requestedId,
+          'batchId',
+          'معرّف الدفعة مستخدم لهذا المنتج',
+        );
+      }
+      return requested;
+    }
+
+    String generated;
+    do {
+      generated = _newId();
+    } while (item.batches.any((batch) => batch.id == generated));
+    return generated;
+  }
+
+  void _requireItem(PantryItem item) {
+    if (!_items.contains(item)) {
+      throw ArgumentError.value(item, 'item', 'المنتج غير موجود في المخزون');
+    }
+  }
+
+  void _requireBatch(PantryItem item, InventoryBatch batch) {
+    _requireItem(item);
+    if (!item.batches.contains(batch)) {
+      throw ArgumentError.value(
+        batch,
+        'batch',
+        'الدفعة غير مرتبطة بهذا المنتج',
+      );
+    }
+  }
+
+  String? _cleanOptionalText(String? value) {
+    final clean = value?.trim() ?? '';
+    return clean.isEmpty ? null : clean;
   }
 
   void _recordMovement(
