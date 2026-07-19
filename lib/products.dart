@@ -1,3 +1,5 @@
+// ignore_for_file: unnecessary_const
+
 class Product {
   const Product(this.name, this.category, [this.aliases = const []]);
   final String name;
