@@ -27,7 +27,6 @@ void main() {
           'name': 'حليب',
           'category': 'الألبان والبيض',
           'quantity': 4,
-          'minimum': 1,
           'unit': 'حبة',
           'location': 'الثلاجة',
         },
@@ -45,6 +44,7 @@ void main() {
     expect(data.favorites, contains('حليب'));
     expect(data.frequency['حليب'], 3);
     expect(data.pantry.single.quantity, 4);
+    expect(data.pantry.single.minimum, 1);
     expect(data.pantry.single.batches, hasLength(1));
     expect(data.themeMode, 'dark');
 
@@ -56,6 +56,7 @@ void main() {
     final savedItem = Map<String, dynamic>.from(savedPantry.single as Map);
 
     expect(savedItem['quantity'], 4);
+    expect(savedItem['minimum'], 1);
     expect(savedItem['batches'], hasLength(1));
     expect(
       prefs.getInt(SharedPreferencesAppRepository.schemaVersionKey),

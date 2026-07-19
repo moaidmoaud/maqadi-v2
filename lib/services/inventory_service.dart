@@ -2,6 +2,8 @@ import 'dart:collection';
 
 import '../models/expiry_models.dart';
 import '../models/inventory_models.dart';
+import '../models/shopping_models.dart';
+import '../models/stock_models.dart';
 import '../utils/arabic_text.dart';
 
 typedef InventoryClock = DateTime Function();
@@ -13,10 +15,10 @@ class InventoryService {
     List<PantryMovement>? movements,
     InventoryClock? clock,
     InventoryIdFactory? idFactory,
-  }) : _items = items ?? [],
-       _movements = movements ?? [],
-       _clock = clock ?? DateTime.now,
-       _idFactory = idFactory;
+  })  : _items = items ?? [],
+        _movements = movements ?? [],
+        _clock = clock ?? DateTime.now,
+        _idFactory = idFactory;
 
   final List<PantryItem> _items;
   final List<PantryMovement> _movements;
@@ -42,25 +44,178 @@ class InventoryService {
   }
 
   List<PantryItem> get lowStockItems {
-    final result = _items
-        .where((item) => item.quantity <= item.minimum && item.quantity > 0)
-        .toList();
-    result.sort((a, b) => a.name.compareTo(b.name));
-    return result;
+    return stockItems(StockStatus.lowStock).map((info) => info.item).toList();
   }
 
   List<PantryItem> get emptyItems {
-    final result = _items.where((item) => item.quantity <= 0).toList();
-    result.sort((a, b) => a.name.compareTo(b.name));
-    return result;
+    return stockItems(StockStatus.outOfStock).map((info) => info.item).toList();
   }
 
   List<PantryItem> get healthyItems {
+    return stockItems(
+      StockStatus.normalStock,
+    ).map((info) => info.item).toList();
+  }
+
+  StockInfo stockInfoFor(PantryItem item) {
+    _requireItem(item);
+    final quantity = item.quantity;
+    final status = quantity <= 0
+        ? StockStatus.outOfStock
+        : quantity <= item.minimum
+            ? StockStatus.lowStock
+            : StockStatus.normalStock;
+    return StockInfo(
+      item: item,
+      status: status,
+      currentQuantity: quantity,
+      minimumQuantity: item.minimum,
+    );
+  }
+
+  List<StockInfo> stockItems(StockStatus status, {String query = ''}) {
+    final normalizedQuery = normalizeArabic(query);
     final result = _items
-        .where((item) => item.quantity > item.minimum)
-        .toList();
-    result.sort((a, b) => a.name.compareTo(b.name));
-    return result;
+        .map(stockInfoFor)
+        .where((info) => info.status == status)
+        .where(
+          (info) =>
+              normalizedQuery.isEmpty ||
+              [info.item.name, info.item.category, info.item.location].any(
+                (value) => normalizeArabic(value).contains(normalizedQuery),
+              ),
+        )
+        .toList()
+      ..sort((a, b) => a.item.name.compareTo(b.item.name));
+    return List.unmodifiable(result);
+  }
+
+  List<PantryItem> pantryItems({
+    String query = '',
+    String? location,
+    bool needsShoppingOnly = false,
+  }) {
+    final normalizedQuery = normalizeArabic(query);
+    final result = _items.where((item) {
+      final info = stockInfoFor(item);
+      final matchesQuery = normalizeArabic(item.name).contains(normalizedQuery);
+      final matchesLocation = location == null || item.location == location;
+      final matchesStatus =
+          !needsShoppingOnly || info.status != StockStatus.normalStock;
+      return matchesQuery && matchesLocation && matchesStatus;
+    }).toList()
+      ..sort((a, b) {
+        final byStatus = _stockSortOrder(
+          stockInfoFor(a).status,
+        ).compareTo(_stockSortOrder(stockInfoFor(b).status));
+        return byStatus != 0 ? byStatus : a.name.compareTo(b.name);
+      });
+    return List.unmodifiable(result);
+  }
+
+  List<GroceryItem> shoppingItemsFor(
+    ShoppingListModel list, {
+    String query = '',
+    StockStatus? stockStatus,
+    bool hideDone = false,
+  }) {
+    final normalizedQuery = normalizeArabic(query);
+    final result = list.items.where((grocery) {
+      if (hideDone && grocery.done) return false;
+      if (normalizedQuery.isNotEmpty &&
+          !normalizeArabic(
+            '${grocery.name} ${grocery.category}',
+          ).contains(normalizedQuery)) {
+        return false;
+      }
+      if (stockStatus == null) return true;
+      final pantryItem = _pantryItemFor(grocery);
+      return pantryItem != null &&
+          stockInfoFor(pantryItem).status == stockStatus;
+    }).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    return List.unmodifiable(result);
+  }
+
+  StockInfo? stockInfoForGrocery(GroceryItem grocery) {
+    final item = _pantryItemFor(grocery);
+    return item == null ? null : stockInfoFor(item);
+  }
+
+  bool synchronizeAutomaticShoppingList(
+    ShoppingListModel list, {
+    required String Function() idFactory,
+  }) {
+    var changed = false;
+    final manualNames = list.items
+        .where((grocery) => grocery.pantryItemId == null)
+        .map((grocery) => normalizeArabic(grocery.name))
+        .toSet();
+    final seenPantryIds = <String>{};
+
+    list.items.removeWhere((grocery) {
+      final pantryItemId = grocery.pantryItemId;
+      if (pantryItemId == null) return false;
+      final pantryItem = _findById(pantryItemId);
+      final remove = pantryItem == null ||
+          stockInfoFor(pantryItem).status == StockStatus.normalStock ||
+          manualNames.contains(normalizeArabic(pantryItem.name)) ||
+          !seenPantryIds.add(pantryItemId);
+      if (remove) changed = true;
+      return remove;
+    });
+
+    final needsShopping = [
+      ...stockItems(StockStatus.outOfStock),
+      ...stockItems(StockStatus.lowStock),
+    ];
+    for (final info in needsShopping) {
+      final item = info.item;
+      if (manualNames.contains(normalizeArabic(item.name))) continue;
+      GroceryItem? automatic;
+      for (final grocery in list.items) {
+        if (grocery.pantryItemId == item.id) {
+          automatic = grocery;
+          break;
+        }
+      }
+      final quantity = recommendedShoppingQuantity(item);
+      if (automatic == null) {
+        list.items.add(
+          GroceryItem(
+            id: idFactory(),
+            name: item.name,
+            category: item.category,
+            quantity: quantity,
+            pantryItemId: item.id,
+          ),
+        );
+        changed = true;
+      } else {
+        if (automatic.name != item.name ||
+            automatic.category != item.category ||
+            automatic.quantity != quantity) {
+          automatic
+            ..name = item.name
+            ..category = item.category
+            ..quantity = quantity;
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  }
+
+  int recommendedShoppingQuantity(PantryItem item) {
+    _requireItem(item);
+    final quantity = (item.minimum - item.quantity).floor() + 1;
+    return quantity.clamp(1, 999).toInt();
+  }
+
+  bool removeAutomaticShoppingItems(ShoppingListModel list) {
+    final before = list.items.length;
+    list.items.removeWhere((grocery) => grocery.pantryItemId != null);
+    return before != list.items.length;
   }
 
   List<PantryMovement> movementsFor(PantryItem item) {
@@ -130,8 +285,7 @@ class InventoryService {
     bool updateExistingDetails = true,
   }) {
     final cleanQuantity = quantity.clamp(0, 999999).toDouble();
-    final item =
-        findByName(name) ??
+    final item = findByName(name) ??
         PantryItem(
           id: _newId(),
           name: name,
@@ -345,6 +499,25 @@ class InventoryService {
     }
     return null;
   }
+
+  PantryItem? _pantryItemFor(GroceryItem grocery) {
+    final pantryItemId = grocery.pantryItemId;
+    if (pantryItemId != null) return _findById(pantryItemId);
+    return findByName(grocery.name);
+  }
+
+  PantryItem? _findById(String id) {
+    for (final item in _items) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  int _stockSortOrder(StockStatus status) => switch (status) {
+        StockStatus.outOfStock => 0,
+        StockStatus.lowStock => 1,
+        StockStatus.normalStock => 2,
+      };
 
   void deleteItem(PantryItem item) {
     _items.remove(item);

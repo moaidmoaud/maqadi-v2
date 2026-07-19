@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maqadi_v2/models/expiry_models.dart';
 import 'package:maqadi_v2/models/inventory_models.dart';
+import 'package:maqadi_v2/models/shopping_models.dart';
+import 'package:maqadi_v2/models/stock_models.dart';
 import 'package:maqadi_v2/services/inventory_service.dart';
 
 void main() {
@@ -176,6 +178,249 @@ void main() {
     expect(saved['quantity'], 6);
     expect(saved['batches'], isA<List<dynamic>>());
     expect(saved['batches'], hasLength(1));
+  });
+
+  test('legacy pantry JSON defaults the minimum stock to one', () {
+    final item = PantryItem.fromJson({
+      'id': 'legacy-without-minimum',
+      'name': 'طحين',
+      'category': 'الحبوب',
+      'quantity': 2,
+      'unit': 'كجم',
+      'location': 'المخزن',
+    });
+
+    expect(item.minimum, 1);
+    expect(item.toJson()['minimum'], 1);
+  });
+
+  group('shopping intelligence', () {
+    test('calculates out, low, and normal stock boundaries', () {
+      final service = InventoryService();
+      final outOfStock = service.addStock(
+        name: 'حليب',
+        category: 'الألبان',
+        quantity: 0,
+        minimum: 1,
+        unit: 'علبة',
+        location: 'الثلاجة',
+      );
+      final lowStock = service.addStock(
+        name: 'أرز',
+        category: 'الحبوب',
+        quantity: 2,
+        minimum: 2,
+        unit: 'كجم',
+        location: 'المخزن',
+      );
+      final normalStock = service.addStock(
+        name: 'تمر',
+        category: 'الحبوب',
+        quantity: 3,
+        minimum: 1,
+        unit: 'علبة',
+        location: 'المخزن',
+      );
+
+      expect(service.stockInfoFor(outOfStock).status, StockStatus.outOfStock);
+      expect(service.stockInfoFor(lowStock).status, StockStatus.lowStock);
+      expect(service.stockInfoFor(normalStock).status, StockStatus.normalStock);
+      expect(
+        service.stockItems(StockStatus.lowStock).single.item,
+        same(lowStock),
+      );
+      expect(
+        service.stockItems(StockStatus.outOfStock, query: 'حليب').single.item,
+        same(outOfStock),
+      );
+      expect(
+        service.pantryItems(needsShoppingOnly: true),
+        [outOfStock, lowStock],
+      );
+      expect(
+        service.pantryItems(query: 'تمر', location: 'المخزن'),
+        [normalStock],
+      );
+    });
+
+    test('keeps one automatic shopping item until stock is replenished', () {
+      var id = 0;
+      final service = InventoryService(idFactory: () => 'inventory_${++id}');
+      final item = service.addStock(
+        name: 'حليب',
+        category: 'الألبان',
+        quantity: 0,
+        minimum: 1,
+        unit: 'علبة',
+        location: 'الثلاجة',
+      );
+      final list = ShoppingListModel(
+        id: 'list-1',
+        name: 'قائمتي',
+        createdAt: DateTime.utc(2026, 7, 19),
+        updatedAt: DateTime.utc(2026, 7, 19),
+        items: [],
+      );
+
+      expect(
+        service.synchronizeAutomaticShoppingList(
+          list,
+          idFactory: () => 'shopping_${++id}',
+        ),
+        isTrue,
+      );
+      expect(list.items, hasLength(1));
+      expect(list.items.single.pantryItemId, item.id);
+      expect(list.items.single.quantity, 2);
+
+      expect(
+        service.synchronizeAutomaticShoppingList(
+          list,
+          idFactory: () => 'shopping_${++id}',
+        ),
+        isFalse,
+      );
+      expect(list.items, hasLength(1));
+
+      service.addBatch(item, quantity: 1);
+      service.synchronizeAutomaticShoppingList(
+        list,
+        idFactory: () => 'shopping_${++id}',
+      );
+      expect(list.items.single.quantity, 1);
+
+      service.addBatch(item, quantity: 1);
+      service.synchronizeAutomaticShoppingList(
+        list,
+        idFactory: () => 'shopping_${++id}',
+      );
+      expect(list.items, isEmpty);
+    });
+
+    test('does not duplicate a manually added shopping item', () {
+      final service = InventoryService();
+      service.addStock(
+        name: 'أرز',
+        category: 'الحبوب',
+        quantity: 0,
+        minimum: 1,
+        unit: 'كجم',
+        location: 'المخزن',
+      );
+      final manualItem = GroceryItem(
+        id: 'manual-rice',
+        name: 'ارز',
+        category: 'الحبوب',
+      );
+      final list = ShoppingListModel(
+        id: 'list-1',
+        name: 'قائمتي',
+        createdAt: DateTime.utc(2026, 7, 19),
+        updatedAt: DateTime.utc(2026, 7, 19),
+        items: [manualItem],
+      );
+
+      service.synchronizeAutomaticShoppingList(
+        list,
+        idFactory: () => 'automatic-rice',
+      );
+
+      expect(list.items, [same(manualItem)]);
+      expect(list.items.single.pantryItemId, isNull);
+    });
+
+    test('searches, filters, and alphabetizes shopping items', () {
+      final service = InventoryService();
+      final low = service.addStock(
+        name: 'أرز',
+        category: 'الحبوب',
+        quantity: 1,
+        minimum: 1,
+        unit: 'كجم',
+        location: 'المخزن',
+      );
+      final out = service.addStock(
+        name: 'حليب',
+        category: 'الألبان',
+        quantity: 0,
+        minimum: 1,
+        unit: 'علبة',
+        location: 'الثلاجة',
+      );
+      service.addStock(
+        name: 'تمر',
+        category: 'الحبوب',
+        quantity: 3,
+        minimum: 1,
+        unit: 'علبة',
+        location: 'المخزن',
+      );
+      final list = ShoppingListModel(
+        id: 'list-1',
+        name: 'قائمتي',
+        createdAt: DateTime.utc(2026, 7, 19),
+        updatedAt: DateTime.utc(2026, 7, 19),
+        items: [
+          GroceryItem(id: '3', name: 'تمر', category: 'الحبوب'),
+          GroceryItem(
+            id: '2',
+            name: 'حليب',
+            category: 'الألبان',
+            pantryItemId: out.id,
+          ),
+          GroceryItem(
+            id: '1',
+            name: 'أرز',
+            category: 'الحبوب',
+            pantryItemId: low.id,
+          ),
+        ],
+      );
+
+      final expectedNames = list.items.map((item) => item.name).toList()
+        ..sort();
+      expect(
+        service.shoppingItemsFor(list).map((item) => item.name),
+        expectedNames,
+      );
+      expect(
+        service
+            .shoppingItemsFor(list, stockStatus: StockStatus.lowStock)
+            .single
+            .name,
+        'أرز',
+      );
+      expect(
+        service
+            .shoppingItemsFor(list, stockStatus: StockStatus.outOfStock)
+            .single
+            .name,
+        'حليب',
+      );
+      expect(service.shoppingItemsFor(list, query: 'تمر').single.name, 'تمر');
+    });
+
+    test('shopping JSON remains compatible with optional pantry metadata', () {
+      final legacy = GroceryItem.fromJson({
+        'id': 'legacy',
+        'name': 'سكر',
+        'category': 'الحبوب',
+        'done': false,
+        'quantity': 1,
+      });
+      final managed = GroceryItem(
+        id: 'managed',
+        name: 'سكر',
+        category: 'الحبوب',
+        pantryItemId: 'pantry-sugar',
+      );
+
+      expect(legacy.pantryItemId, isNull);
+      expect(
+        GroceryItem.fromJson(managed.toJson()).pantryItemId,
+        'pantry-sugar',
+      );
+    });
   });
 
   group('expiry management', () {

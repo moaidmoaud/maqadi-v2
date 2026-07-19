@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
 import 'models/shopping_models.dart';
+import 'models/stock_models.dart';
 import 'products.dart';
 import 'repositories/app_repository.dart';
 import 'repositories/shared_preferences_app_repository.dart';
@@ -13,8 +14,8 @@ import 'utils/arabic_text.dart';
 
 class AppStore extends ChangeNotifier {
   AppStore({AppRepository? repository, InventoryService? inventoryService})
-    : _repository = repository ?? SharedPreferencesAppRepository(),
-      _inventory = inventoryService ?? InventoryService();
+      : _repository = repository ?? SharedPreferencesAppRepository(),
+        _inventory = inventoryService ?? InventoryService();
 
   final AppRepository _repository;
   final InventoryService _inventory;
@@ -72,6 +73,7 @@ class AppStore extends ChangeNotifier {
     themeMode = _themeModeFromName(data.themeMode);
     fontScale = data.fontScale.clamp(0.9, 1.25).toDouble();
 
+    var needsSave = false;
     if (lists.isEmpty) {
       final now = DateTime.now();
       lists.add(
@@ -83,25 +85,28 @@ class AppStore extends ChangeNotifier {
         ),
       );
       lastListId = lists.first.id;
-      await save();
+      needsSave = true;
     }
+
+    needsSave = _synchronizeAutomaticShoppingList() || needsSave;
+    if (needsSave) await save();
 
     isReady = true;
     notifyListeners();
   }
 
   Future<void> save() => _repository.save(
-    AppData(
-      lists: lists,
-      favorites: favorites,
-      frequency: frequency,
-      pantry: pantry,
-      pantryMovements: pantryMovements,
-      lastListId: lastListId,
-      themeMode: themeMode.name,
-      fontScale: fontScale,
-    ),
-  );
+        AppData(
+          lists: lists,
+          favorites: favorites,
+          frequency: frequency,
+          pantry: pantry,
+          pantryMovements: pantryMovements,
+          lastListId: lastListId,
+          themeMode: themeMode.name,
+          fontScale: fontScale,
+        ),
+      );
 
   void scheduleSave() {
     _saveTimer?.cancel();
@@ -124,6 +129,7 @@ class AppStore extends ChangeNotifier {
     );
     lists.add(list);
     lastListId = list.id;
+    _synchronizeAutomaticShoppingList();
     _changed();
     return list;
   }
@@ -131,6 +137,7 @@ class AppStore extends ChangeNotifier {
   void openList(ShoppingListModel list) {
     lastListId = list.id;
     list.updatedAt = DateTime.now();
+    _synchronizeAutomaticShoppingList();
     _changed();
   }
 
@@ -155,12 +162,14 @@ class AppStore extends ChangeNotifier {
               name: item.name,
               category: item.category,
               quantity: item.quantity,
+              pantryItemId: item.pantryItemId,
             ),
           )
           .toList(),
     );
     lists.add(copy);
     lastListId = copy.id;
+    _synchronizeAutomaticShoppingList();
     _changed();
     return copy;
   }
@@ -171,6 +180,7 @@ class AppStore extends ChangeNotifier {
     if (lastListId == list.id) {
       lastListId = activeLists.isEmpty ? null : activeLists.first.id;
     }
+    _synchronizeAutomaticShoppingList();
     _changed();
   }
 
@@ -179,6 +189,7 @@ class AppStore extends ChangeNotifier {
     if (lastListId == list.id) {
       lastListId = activeLists.isEmpty ? null : activeLists.first.id;
     }
+    _synchronizeAutomaticShoppingList();
     _changed();
   }
 
@@ -212,11 +223,10 @@ class AppStore extends ChangeNotifier {
 
   void addItems(ShoppingListModel list, String raw, [String? category]) {
     var changed = false;
-    for (final value
-        in raw
-            .split(RegExp(r'[\n,،]+'))
-            .map((item) => item.trim())
-            .where((item) => item.isNotEmpty)) {
+    for (final value in raw
+        .split(RegExp(r'[\n,،]+'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)) {
       GroceryItem? existing;
       for (final item in list.items) {
         if (normalizeArabic(item.name) == normalizeArabic(value)) {
@@ -263,6 +273,7 @@ class AppStore extends ChangeNotifier {
 
   void clearCompleted(ShoppingListModel list) {
     list.items.removeWhere((item) => item.done);
+    _synchronizeAutomaticShoppingList();
     updateItem(list);
   }
 
@@ -295,6 +306,41 @@ class AppStore extends ChangeNotifier {
   List<PantryItem> get emptyPantryItems => _inventory.emptyItems;
   List<PantryItem> get healthyPantryItems => _inventory.healthyItems;
 
+  StockInfo stockInfoFor(PantryItem item) => _inventory.stockInfoFor(item);
+
+  List<StockInfo> stockItems(StockStatus status, {String query = ''}) =>
+      _inventory.stockItems(status, query: query);
+
+  List<PantryItem> pantryItems({
+    String query = '',
+    String? location,
+    bool needsShoppingOnly = false,
+  }) =>
+      _inventory.pantryItems(
+        query: query,
+        location: location,
+        needsShoppingOnly: needsShoppingOnly,
+      );
+
+  List<GroceryItem> shoppingItemsFor(
+    ShoppingListModel list, {
+    String query = '',
+    StockStatus? stockStatus,
+    bool hideDone = false,
+  }) =>
+      _inventory.shoppingItemsFor(
+        list,
+        query: query,
+        stockStatus: stockStatus,
+        hideDone: hideDone,
+      );
+
+  StockInfo? stockInfoForGrocery(GroceryItem grocery) =>
+      _inventory.stockInfoForGrocery(grocery);
+
+  int get shoppingListItemCount =>
+      lastList?.items.where((item) => !item.done).length ?? 0;
+
   List<PantryMovement> movementsFor(PantryItem item) =>
       _inventory.movementsFor(item);
 
@@ -307,7 +353,8 @@ class AppStore extends ChangeNotifier {
   List<BatchExpiryInfo> expiryBatches(
     BatchExpiryStatus status, {
     String query = '',
-  }) => _inventory.expiryBatches(status, query: query);
+  }) =>
+      _inventory.expiryBatches(status, query: query);
 
   List<BatchExpiryInfo> expiringSoonBatches({String query = ''}) =>
       _inventory.expiringSoonBatches(query: query);
@@ -335,7 +382,7 @@ class AppStore extends ChangeNotifier {
     }
     list.items.removeWhere((item) => item.done);
     list.updatedAt = DateTime.now();
-    _changed();
+    _inventoryChanged();
     return purchased.length;
   }
 
@@ -356,7 +403,7 @@ class AppStore extends ChangeNotifier {
       unit: unit,
       location: location,
     );
-    _changed();
+    _inventoryChanged();
   }
 
   void updatePantryItem(
@@ -377,12 +424,12 @@ class AppStore extends ChangeNotifier {
       unit: unit,
       location: location,
     );
-    _changed();
+    _inventoryChanged();
   }
 
   void changePantryQuantity(PantryItem item, double delta) {
     _inventory.changeQuantity(item, delta);
-    _changed();
+    _inventoryChanged();
   }
 
   InventoryBatch addPantryBatch(
@@ -401,7 +448,7 @@ class AppStore extends ChangeNotifier {
       batchId: batchId,
       note: note,
     );
-    _changed();
+    _inventoryChanged();
     return batch;
   }
 
@@ -423,42 +470,25 @@ class AppStore extends ChangeNotifier {
       batchId: batchId,
       note: note,
     );
-    _changed();
+    _inventoryChanged();
   }
 
   void deletePantryBatch(PantryItem item, InventoryBatch batch) {
     _inventory.deleteBatch(item, batch);
-    _changed();
+    _inventoryChanged();
   }
 
   void deletePantryItem(PantryItem item) {
     _inventory.deleteItem(item);
-    _changed();
+    _inventoryChanged();
   }
 
   void addLowStockToList(ShoppingListModel list) {
-    for (final item in [...lowStockItems, ...emptyPantryItems]) {
-      final needed = (item.minimum - item.quantity)
-          .ceil()
-          .clamp(1, 999)
-          .toInt();
-      final exists = list.items.any(
-        (grocery) =>
-            normalizeArabic(grocery.name) == normalizeArabic(item.name),
-      );
-      if (!exists) {
-        list.items.add(
-          GroceryItem(
-            id: _newId(),
-            name: item.name,
-            category: item.category,
-            quantity: needed,
-          ),
-        );
-      }
+    final switchedList = lastListId != list.id;
+    lastListId = list.id;
+    if (_synchronizeAutomaticShoppingList() || switchedList) {
+      _changed();
     }
-    list.updatedAt = DateTime.now();
-    _changed();
   }
 
   void setThemeMode(ThemeMode mode) {
@@ -476,11 +506,31 @@ class AppStore extends ChangeNotifier {
     scheduleSave();
   }
 
+  void _inventoryChanged() {
+    _synchronizeAutomaticShoppingList();
+    _changed();
+  }
+
+  bool _synchronizeAutomaticShoppingList() {
+    final target = lastList;
+    var changed = false;
+    for (final list in lists) {
+      final listChanged = identical(list, target)
+          ? _inventory.synchronizeAutomaticShoppingList(list, idFactory: _newId)
+          : _inventory.removeAutomaticShoppingItems(list);
+      if (listChanged) {
+        list.updatedAt = DateTime.now();
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   ThemeMode _themeModeFromName(String value) => switch (value) {
-    'dark' => ThemeMode.dark,
-    'light' => ThemeMode.light,
-    _ => ThemeMode.system,
-  };
+        'dark' => ThemeMode.dark,
+        'light' => ThemeMode.light,
+        _ => ThemeMode.system,
+      };
 
   String _newId() {
     _idCounter++;

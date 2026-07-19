@@ -5,6 +5,7 @@ class GroceryItem {
     required this.category,
     this.done = false,
     this.quantity = 1,
+    this.pantryItemId,
   });
 
   final String id;
@@ -12,6 +13,7 @@ class GroceryItem {
   String category;
   bool done;
   int quantity;
+  final String? pantryItemId;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -19,6 +21,7 @@ class GroceryItem {
     'category': category,
     'done': done,
     'quantity': quantity,
+    if (pantryItemId != null) 'pantryItemId': pantryItemId,
   };
 
   factory GroceryItem.fromJson(Map<String, dynamic> json) => GroceryItem(
@@ -29,6 +32,7 @@ class GroceryItem {
     category: json['category'] as String? ?? 'أخرى',
     done: json['done'] as bool? ?? false,
     quantity: json['quantity'] as int? ?? json['qty'] as int? ?? 1,
+    pantryItemId: json['pantryItemId'] as String?,
   );
 }
 

@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../app_store.dart';
 import '../models/expiry_models.dart';
 import '../models/inventory_models.dart';
+import '../models/stock_models.dart';
 import '../widgets/expiry_status_badge.dart';
+import '../widgets/stock_status_badge.dart';
 
 class BatchManagementScreen extends StatefulWidget {
   const BatchManagementScreen({
@@ -106,7 +108,7 @@ class _BatchManagementScreenState extends State<BatchManagementScreen> {
             child: Column(
               children: [
                 _BatchSummary(
-                  totalQuantity: widget.item.quantity,
+                  stockInfo: widget.store.stockInfoFor(widget.item),
                   unit: widget.item.unit,
                   batchCount: batches.length,
                 ),
@@ -143,12 +145,12 @@ class _BatchManagementScreenState extends State<BatchManagementScreen> {
 
 class _BatchSummary extends StatelessWidget {
   const _BatchSummary({
-    required this.totalQuantity,
+    required this.stockInfo,
     required this.unit,
     required this.batchCount,
   });
 
-  final double totalQuantity;
+  final StockInfo stockInfo;
   final String unit;
   final int batchCount;
 
@@ -156,23 +158,37 @@ class _BatchSummary extends StatelessWidget {
   Widget build(BuildContext context) => Card(
     child: Padding(
       padding: const EdgeInsets.all(16),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: _SummaryValue(
-              icon: Icons.inventory_2_outlined,
-              label: 'إجمالي الكمية',
-              value: '${_formatQuantity(totalQuantity)} $unit',
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryValue(
+                  icon: Icons.inventory_2_outlined,
+                  label: 'الكمية الحالية',
+                  value: '${_formatQuantity(stockInfo.currentQuantity)} $unit',
+                ),
+              ),
+              const SizedBox(height: 42, child: VerticalDivider()),
+              Expanded(
+                child: _SummaryValue(
+                  icon: Icons.vertical_align_bottom_outlined,
+                  label: 'الحد الأدنى',
+                  value: '${_formatQuantity(stockInfo.minimumQuantity)} $unit',
+                ),
+              ),
+              const SizedBox(height: 42, child: VerticalDivider()),
+              Expanded(
+                child: _SummaryValue(
+                  icon: Icons.layers_outlined,
+                  label: 'عدد الدفعات',
+                  value: '$batchCount',
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 42, child: VerticalDivider()),
-          Expanded(
-            child: _SummaryValue(
-              icon: Icons.layers_outlined,
-              label: 'عدد الدفعات',
-              value: '$batchCount',
-            ),
-          ),
+          const SizedBox(height: 12),
+          StockStatusBadge(info: stockInfo),
         ],
       ),
     ),

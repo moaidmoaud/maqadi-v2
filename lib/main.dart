@@ -8,10 +8,12 @@ import 'app_store.dart';
 import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
 import 'models/shopping_models.dart';
+import 'models/stock_models.dart';
 import 'products.dart';
 import 'screens/batch_management_screen.dart';
 import 'screens/expiry_list_screen.dart';
 import 'utils/arabic_text.dart';
+import 'widgets/stock_status_badge.dart';
 
 void main() => runApp(const MaqadiApp());
 
@@ -33,44 +35,45 @@ class _MaqadiAppState extends State<MaqadiApp> {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: store,
-    builder: (context, _) => MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'مقاضي',
-      themeMode: store.themeMode,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF2E7D32),
-        scaffoldBackgroundColor: const Color(0xFFF7F8F6),
-        cardTheme: const CardThemeData(margin: EdgeInsets.zero),
-      ),
-      darkTheme: ThemeData.dark(useMaterial3: true).copyWith(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF66BB6A),
-          brightness: Brightness.dark,
+        animation: store,
+        builder: (context, _) => MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'مقاضي',
+          themeMode: store.themeMode,
+          theme: ThemeData(
+            useMaterial3: true,
+            colorSchemeSeed: const Color(0xFF2E7D32),
+            scaffoldBackgroundColor: const Color(0xFFF7F8F6),
+            cardTheme: const CardThemeData(margin: EdgeInsets.zero),
+          ),
+          darkTheme: ThemeData.dark(useMaterial3: true).copyWith(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF66BB6A),
+              brightness: Brightness.dark,
+            ),
+          ),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(store.fontScale)),
+            child: child!,
+          ),
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: store.isReady
+                ? HomeScreen(
+                    store: store,
+                    onToggleTheme: () => store.setThemeMode(
+                      store.themeMode == ThemeMode.dark
+                          ? ThemeMode.light
+                          : ThemeMode.dark,
+                    ),
+                  )
+                : const Scaffold(
+                    body: Center(child: CircularProgressIndicator())),
+          ),
         ),
-      ),
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(textScaler: TextScaler.linear(store.fontScale)),
-        child: child!,
-      ),
-      home: Directionality(
-        textDirection: TextDirection.rtl,
-        child: store.isReady
-            ? HomeScreen(
-                store: store,
-                onToggleTheme: () => store.setThemeMode(
-                  store.themeMode == ThemeMode.dark
-                      ? ThemeMode.light
-                      : ThemeMode.dark,
-                ),
-              )
-            : const Scaffold(body: Center(child: CircularProgressIndicator())),
-      ),
-    ),
-  );
+      );
 }
 
 class HomeScreen extends StatefulWidget {
@@ -123,14 +126,18 @@ class _HomeScreenState extends State<HomeScreen> {
     _openList(list);
   }
 
-  void _openList(ShoppingListModel list) {
+  void _openList(ShoppingListModel list, {StockStatus? initialStockFilter}) {
     widget.store.openList(list);
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => Directionality(
           textDirection: TextDirection.rtl,
-          child: ShoppingScreen(store: widget.store, list: list),
+          child: ShoppingScreen(
+            store: widget.store,
+            list: list,
+            initialStockFilter: initialStockFilter,
+          ),
         ),
       ),
     );
@@ -160,9 +167,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final last = widget.store.lastList;
-    final visibleLists = showArchived
-        ? widget.store.archivedLists
-        : widget.store.activeLists;
+    final visibleLists =
+        showArchived ? widget.store.archivedLists : widget.store.activeLists;
 
     return Scaffold(
       appBar: AppBar(
@@ -318,6 +324,53 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickCard(
+                  icon: Icons.warning_amber_rounded,
+                  title: 'مخزون منخفض',
+                  subtitle:
+                      '${widget.store.stockItems(StockStatus.lowStock).length} منتج',
+                  onTap: () {
+                    final list = widget.store.lastList;
+                    if (list != null) {
+                      _openList(list, initialStockFilter: StockStatus.lowStock);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickCard(
+                  icon: Icons.remove_shopping_cart_outlined,
+                  title: 'نفد المخزون',
+                  subtitle:
+                      '${widget.store.stockItems(StockStatus.outOfStock).length} منتج',
+                  onTap: () {
+                    final list = widget.store.lastList;
+                    if (list != null) {
+                      _openList(
+                        list,
+                        initialStockFilter: StockStatus.outOfStock,
+                      );
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _QuickCard(
+            icon: Icons.shopping_cart_outlined,
+            title: 'عناصر قائمة التسوق',
+            subtitle: '${widget.store.shoppingListItemCount} عنصر',
+            onTap: () {
+              final list = widget.store.lastList;
+              if (list != null) _openList(list);
+            },
           ),
           const SizedBox(height: 10),
           Row(
@@ -480,23 +533,24 @@ class _QuickCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon),
-            const SizedBox(height: 12),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-            Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-          ],
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon),
+                const SizedBox(height: 12),
+                Text(title,
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 }
 
 class PantryScreen extends StatefulWidget {
@@ -586,40 +640,38 @@ class _PantryScreenState extends State<PantryScreen> {
                 DropdownButtonFormField<String>(
                   initialValue: unit,
                   decoration: const InputDecoration(labelText: 'الوحدة'),
-                  items:
-                      const [
-                            'حبة',
-                            'عبوة',
-                            'كرتون',
-                            'كجم',
-                            'جرام',
-                            'لتر',
-                            'مل',
-                            'كيس',
-                            'علبة',
-                          ]
-                          .map(
-                            (v) => DropdownMenuItem(value: v, child: Text(v)),
-                          )
-                          .toList(),
+                  items: const [
+                    'حبة',
+                    'عبوة',
+                    'كرتون',
+                    'كجم',
+                    'جرام',
+                    'لتر',
+                    'مل',
+                    'كيس',
+                    'علبة',
+                  ]
+                      .map(
+                        (v) => DropdownMenuItem(value: v, child: Text(v)),
+                      )
+                      .toList(),
                   onChanged: (v) => setSheetState(() => unit = v ?? unit),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: place,
                   decoration: const InputDecoration(labelText: 'مكان التخزين'),
-                  items:
-                      const [
-                            'المخزن',
-                            'الثلاجة',
-                            'الفريزر',
-                            'التنظيف',
-                            'الأطفال',
-                          ]
-                          .map(
-                            (v) => DropdownMenuItem(value: v, child: Text(v)),
-                          )
-                          .toList(),
+                  items: const [
+                    'المخزن',
+                    'الثلاجة',
+                    'الفريزر',
+                    'التنظيف',
+                    'الأطفال',
+                  ]
+                      .map(
+                        (v) => DropdownMenuItem(value: v, child: Text(v)),
+                      )
+                      .toList(),
                   onChanged: (v) => setSheetState(() => place = v ?? place),
                 ),
                 const SizedBox(height: 18),
@@ -663,8 +715,7 @@ class _PantryScreenState extends State<PantryScreen> {
 
   Future<void> _addLowToList() async {
     if (widget.store.lowStockItems.isEmpty &&
-        widget.store.emptyPantryItems.isEmpty)
-      return;
+        widget.store.emptyPantryItems.isEmpty) return;
     final active = widget.store.activeLists;
     ShoppingListModel? selected = widget.store.lastList;
     final result = await showDialog<ShoppingListModel>(
@@ -751,8 +802,8 @@ class _PantryScreenState extends State<PantryScreen> {
                               movement.type == 'شراء'
                                   ? Icons.shopping_bag_outlined
                                   : movement.amount < 0
-                                  ? Icons.remove_circle_outline
-                                  : Icons.edit_outlined,
+                                      ? Icons.remove_circle_outline
+                                      : Icons.edit_outlined,
                             ),
                             title: Text(
                               movement.type,
@@ -786,18 +837,11 @@ class _PantryScreenState extends State<PantryScreen> {
       'الكل',
       ...{for (final item in widget.store.pantry) item.location},
     ];
-    final items =
-        widget.store.pantry.where((item) {
-          final matchesQuery = normalizeArabic(
-            item.name,
-          ).contains(normalizeArabic(query));
-          final matchesLocation =
-              location == 'الكل' || item.location == location;
-          return matchesQuery && matchesLocation && (!lowOnly || item.isLow);
-        }).toList()..sort((a, b) {
-          if (a.isLow != b.isLow) return a.isLow ? -1 : 1;
-          return a.name.compareTo(b.name);
-        });
+    final items = widget.store.pantryItems(
+      query: query,
+      location: location == 'الكل' ? null : location,
+      needsShoppingOnly: lowOnly,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -808,8 +852,7 @@ class _PantryScreenState extends State<PantryScreen> {
         actions: [
           IconButton(
             tooltip: 'إضافة الناقص للقائمة',
-            onPressed:
-                widget.store.lowStockItems.isEmpty &&
+            onPressed: widget.store.lowStockItems.isEmpty &&
                     widget.store.emptyPantryItems.isEmpty
                 ? null
                 : _addLowToList,
@@ -926,6 +969,9 @@ class _PantryScreenState extends State<PantryScreen> {
                     separatorBuilder: (_, __) => const SizedBox(height: 10),
                     itemBuilder: (_, index) {
                       final item = items[index];
+                      final stockInfo = widget.store.stockInfoFor(item);
+                      final needsShopping =
+                          stockInfo.status != StockStatus.normalStock;
                       return Card(
                         clipBehavior: Clip.antiAlias,
                         child: InkWell(
@@ -935,7 +981,7 @@ class _PantryScreenState extends State<PantryScreen> {
                             child: Row(
                               children: [
                                 CircleAvatar(
-                                  backgroundColor: item.isLow
+                                  backgroundColor: needsShopping
                                       ? Theme.of(
                                           context,
                                         ).colorScheme.errorContainer
@@ -943,7 +989,7 @@ class _PantryScreenState extends State<PantryScreen> {
                                           context,
                                         ).colorScheme.primaryContainer,
                                   child: Icon(
-                                    item.isLow
+                                    needsShopping
                                         ? Icons.warning_amber_rounded
                                         : Icons.inventory_2_outlined,
                                   ),
@@ -965,14 +1011,16 @@ class _PantryScreenState extends State<PantryScreen> {
                                               ),
                                             ),
                                           ),
-                                          if (item.quantity <= 0)
+                                          if (stockInfo.status ==
+                                              StockStatus.outOfStock)
                                             const Text(
                                               'منتهي',
                                               style: TextStyle(
                                                 fontWeight: FontWeight.w800,
                                               ),
                                             )
-                                          else if (item.isLow)
+                                          else if (stockInfo.status ==
+                                              StockStatus.lowStock)
                                             const Text(
                                               'منخفض',
                                               style: TextStyle(
@@ -1071,29 +1119,29 @@ class _PantrySummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Icon(icon),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
             children: [
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                ),
+              Icon(icon),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(label),
+                ],
               ),
-              Text(label),
             ],
           ),
-        ],
-      ),
-    ),
-  );
+        ),
+      );
 }
 
 class FavoritesScreen extends StatelessWidget {
@@ -1243,25 +1291,26 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: width,
-    child: Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon),
-            const SizedBox(height: 16),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+        width: width,
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon),
+                const SizedBox(height: 16),
+                Text(
+                  value,
+                  style: const TextStyle(
+                      fontSize: 26, fontWeight: FontWeight.w900),
+                ),
+                Text(label),
+              ],
             ),
-            Text(label),
-          ],
+          ),
         ),
-      ),
-    ),
-  );
+      );
 }
 
 class SettingsScreen extends StatelessWidget {
@@ -1270,90 +1319,96 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text(
-        'الإعدادات',
-        style: TextStyle(fontWeight: FontWeight.w900),
-      ),
-    ),
-    body: ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text(
-          'المظهر',
-          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 8),
-        Card(
-          child: Column(
-            children: [
-              RadioListTile<ThemeMode>(
-                value: ThemeMode.system,
-                groupValue: store.themeMode,
-                onChanged: (v) => store.setThemeMode(v!),
-                title: const Text('حسب إعداد الجهاز'),
-              ),
-              RadioListTile<ThemeMode>(
-                value: ThemeMode.light,
-                groupValue: store.themeMode,
-                onChanged: (v) => store.setThemeMode(v!),
-                title: const Text('فاتح'),
-              ),
-              RadioListTile<ThemeMode>(
-                value: ThemeMode.dark,
-                groupValue: store.themeMode,
-                onChanged: (v) => store.setThemeMode(v!),
-                title: const Text('داكن'),
-              ),
-            ],
+        appBar: AppBar(
+          title: const Text(
+            'الإعدادات',
+            style: TextStyle(fontWeight: FontWeight.w900),
           ),
         ),
-        const SizedBox(height: 20),
-        const Text(
-          'حجم النص',
-          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
-        ),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Slider(
-                  value: store.fontScale,
-                  min: 0.9,
-                  max: 1.25,
-                  divisions: 7,
-                  label: '${(store.fontScale * 100).round()}٪',
-                  onChanged: store.setFontScale,
-                ),
-                Text(
-                  'نص تجريبي بحجم ${(store.fontScale * 100).round()}٪',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ],
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text(
+              'المظهر',
+              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
             ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        const Card(
-          child: ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('مقاضي Sprint 2.6 — المرحلة الثانية'),
-            subtitle: Text(
-              'ربط قائمة المقاضي بالمخزن، سجل الحركة ولوحة حالة المخزون',
+            const SizedBox(height: 8),
+            Card(
+              child: Column(
+                children: [
+                  RadioListTile<ThemeMode>(
+                    value: ThemeMode.system,
+                    groupValue: store.themeMode,
+                    onChanged: (v) => store.setThemeMode(v!),
+                    title: const Text('حسب إعداد الجهاز'),
+                  ),
+                  RadioListTile<ThemeMode>(
+                    value: ThemeMode.light,
+                    groupValue: store.themeMode,
+                    onChanged: (v) => store.setThemeMode(v!),
+                    title: const Text('فاتح'),
+                  ),
+                  RadioListTile<ThemeMode>(
+                    value: ThemeMode.dark,
+                    groupValue: store.themeMode,
+                    onChanged: (v) => store.setThemeMode(v!),
+                    title: const Text('داكن'),
+                  ),
+                ],
+              ),
             ),
-          ),
+            const SizedBox(height: 20),
+            const Text(
+              'حجم النص',
+              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+            ),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Slider(
+                      value: store.fontScale,
+                      min: 0.9,
+                      max: 1.25,
+                      divisions: 7,
+                      label: '${(store.fontScale * 100).round()}٪',
+                      onChanged: store.setFontScale,
+                    ),
+                    Text(
+                      'نص تجريبي بحجم ${(store.fontScale * 100).round()}٪',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.info_outline),
+                title: Text('مقاضي Sprint 2.6 — المرحلة الثانية'),
+                subtitle: Text(
+                  'ربط قائمة المقاضي بالمخزن، سجل الحركة ولوحة حالة المخزون',
+                ),
+              ),
+            ),
+          ],
         ),
-      ],
-    ),
-  );
+      );
 }
 
 class ShoppingScreen extends StatefulWidget {
-  const ShoppingScreen({super.key, required this.store, required this.list});
+  const ShoppingScreen({
+    super.key,
+    required this.store,
+    required this.list,
+    this.initialStockFilter,
+  });
 
   final AppStore store;
   final ShoppingListModel list;
+  final StockStatus? initialStockFilter;
 
   @override
   State<ShoppingScreen> createState() => _ShoppingScreenState();
@@ -1365,11 +1420,12 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   String selectedCategory = 'الكل';
   bool hideDone = false;
   bool favoritesOnly = false;
+  StockStatus? stockFilter;
 
   List<String> get categories => [
-    'الكل',
-    ...{for (final product in products) product.category},
-  ];
+        'الكل',
+        ...{for (final product in products) product.category},
+      ];
 
   List<Product> get suggestions {
     final normalizedQuery = normalizeArabic(query);
@@ -1381,8 +1437,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
       final searchable = normalizeArabic(
         '${product.name} ${product.aliases.join(' ')} ${product.category}',
       );
-      final matchesQuery =
-          normalizedQuery.isEmpty ||
+      final matchesQuery = normalizedQuery.isEmpty ||
           searchTokens(normalizedQuery).every(searchable.contains);
       return matchesCategory && matchesFavorite && matchesQuery;
     }).toList();
@@ -1414,6 +1469,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   @override
   void initState() {
     super.initState();
+    stockFilter = widget.initialStockFilter;
     controller.addListener(
       () => setState(() => query = controller.text.trim()),
     );
@@ -1468,9 +1524,14 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final visibleItems = widget.store.shoppingItemsFor(
+      widget.list,
+      query: query,
+      stockStatus: stockFilter,
+      hideDone: hideDone,
+    );
     final grouped = <String, List<GroceryItem>>{};
-    for (final item in widget.list.items) {
-      if (hideDone && item.done) continue;
+    for (final item in visibleItems) {
       grouped.putIfAbsent(item.category, () => []).add(item);
     }
 
@@ -1568,9 +1629,8 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: widget.list.completedCount == 0
-                ? null
-                : _putPurchasedInPantry,
+            onPressed:
+                widget.list.completedCount == 0 ? null : _putPurchasedInPantry,
             icon: const Icon(Icons.home_work_outlined),
             label: Text(
               widget.list.completedCount == 0
@@ -1583,6 +1643,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
           ),
           const SizedBox(height: 12),
           TextField(
+            key: const ValueKey('shopping-search-field'),
             controller: controller,
             minLines: 1,
             maxLines: 4,
@@ -1636,6 +1697,23 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                 selected: hideDone,
                 onSelected: (value) => setState(() => hideDone = value),
               ),
+              ChoiceChip(
+                label: const Text('كل المخزون'),
+                selected: stockFilter == null,
+                onSelected: (_) => setState(() => stockFilter = null),
+              ),
+              ChoiceChip(
+                label: const Text('مخزون منخفض'),
+                selected: stockFilter == StockStatus.lowStock,
+                onSelected: (_) =>
+                    setState(() => stockFilter = StockStatus.lowStock),
+              ),
+              ChoiceChip(
+                label: const Text('نفد المخزون'),
+                selected: stockFilter == StockStatus.outOfStock,
+                onSelected: (_) =>
+                    setState(() => stockFilter = StockStatus.outOfStock),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -1680,18 +1758,24 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                 .toList(),
           ),
           const SizedBox(height: 14),
-          if (widget.list.items.isEmpty)
-            const Padding(
+          if (visibleItems.isEmpty)
+            Padding(
               padding: EdgeInsets.only(top: 30),
               child: Column(
                 children: [
-                  Icon(Icons.shopping_cart_outlined, size: 64),
-                  SizedBox(height: 10),
+                  const Icon(Icons.shopping_cart_outlined, size: 64),
+                  const SizedBox(height: 10),
                   Text(
-                    'القائمة فارغة',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    widget.list.items.isEmpty
+                        ? 'القائمة فارغة'
+                        : 'لا توجد عناصر مطابقة',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  Text('أضف أول غرض وابدأ تجهيز مقاضيك'),
+                  if (widget.list.items.isEmpty)
+                    const Text('أضف أول غرض وابدأ تجهيز مقاضيك'),
                 ],
               ),
             ),
@@ -1721,6 +1805,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                   duration: const Duration(milliseconds: 220),
                   opacity: item.done ? 0.62 : 1,
                   child: Card(
+                    key: ValueKey('shopping-item-${item.id}'),
                     child: ListTile(
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -1737,12 +1822,14 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                         item.name,
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          decoration: item.done
-                              ? TextDecoration.lineThrough
-                              : null,
+                          decoration:
+                              item.done ? TextDecoration.lineThrough : null,
                         ),
                       ),
-                      subtitle: Text('الكمية: ${item.quantity}'),
+                      subtitle: _ShoppingItemSubtitle(
+                        store: widget.store,
+                        item: item,
+                      ),
                       trailing: PopupMenuButton<String>(
                         onSelected: (value) async {
                           if (value == 'plus') item.quantity++;
@@ -1811,18 +1898,25 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                             widget.store.updateItem(widget.list);
                         },
                         itemBuilder: (_) => [
-                          const PopupMenuItem(
-                            value: 'edit',
-                            child: Text('تعديل الاسم'),
-                          ),
-                          const PopupMenuItem(
-                            value: 'plus',
-                            child: Text('زيادة الكمية'),
-                          ),
-                          const PopupMenuItem(
-                            value: 'minus',
-                            child: Text('تقليل الكمية'),
-                          ),
+                          if (item.pantryItemId != null)
+                            const PopupMenuItem(
+                              enabled: false,
+                              child: Text('يُدار تلقائيًا من المخزون'),
+                            ),
+                          if (item.pantryItemId == null) ...[
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Text('تعديل الاسم'),
+                            ),
+                            const PopupMenuItem(
+                              value: 'plus',
+                              child: Text('زيادة الكمية'),
+                            ),
+                            const PopupMenuItem(
+                              value: 'minus',
+                              child: Text('تقليل الكمية'),
+                            ),
+                          ],
                           PopupMenuItem(
                             value: 'favorite',
                             child: Text(
@@ -1831,10 +1925,11 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                                   : 'إضافة للمفضلة',
                             ),
                           ),
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Text('حذف'),
-                          ),
+                          if (item.pantryItemId == null)
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Text('حذف'),
+                            ),
                         ],
                       ),
                     ),
@@ -1845,6 +1940,32 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _ShoppingItemSubtitle extends StatelessWidget {
+  const _ShoppingItemSubtitle({required this.store, required this.item});
+
+  final AppStore store;
+  final GroceryItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final stockInfo = store.stockInfoForGrocery(item);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('الكمية: ${item.quantity}'),
+        if (item.pantryItemId != null) ...[
+          const SizedBox(height: 4),
+          const Text('أُضيف تلقائيًا من المخزون'),
+        ],
+        if (stockInfo != null) ...[
+          const SizedBox(height: 6),
+          StockStatusBadge(info: stockInfo),
+        ],
+      ],
     );
   }
 }
