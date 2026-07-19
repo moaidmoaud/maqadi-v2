@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:maqadi_v2/models/expiry_models.dart';
 import 'package:maqadi_v2/models/inventory_models.dart';
 import 'package:maqadi_v2/services/inventory_service.dart';
 
@@ -175,5 +176,131 @@ void main() {
     expect(saved['quantity'], 6);
     expect(saved['batches'], isA<List<dynamic>>());
     expect(saved['batches'], hasLength(1));
+  });
+
+  group('expiry management', () {
+    test('calculates fresh, expiring soon, and expired boundaries', () {
+      final service = InventoryService(
+        clock: () => DateTime.utc(2026, 7, 19, 23, 45),
+      );
+      final item = service.addStock(
+        name: 'حليب',
+        category: 'الألبان',
+        quantity: 0,
+        minimum: 1,
+        unit: 'علبة',
+        location: 'الثلاجة',
+      );
+      final noExpiry = service.addBatch(
+        item,
+        quantity: 1,
+        batchId: 'no-expiry',
+      );
+      final fresh = service.addBatch(
+        item,
+        quantity: 1,
+        expiresAt: DateTime.utc(2026, 8, 19),
+        batchId: 'fresh',
+      );
+      final soon = service.addBatch(
+        item,
+        quantity: 1,
+        expiresAt: DateTime.utc(2026, 8, 18),
+        batchId: 'soon',
+      );
+      final today = service.addBatch(
+        item,
+        quantity: 1,
+        expiresAt: DateTime.utc(2026, 7, 19),
+        batchId: 'today',
+      );
+      final expired = service.addBatch(
+        item,
+        quantity: 1,
+        expiresAt: DateTime.utc(2026, 7, 18),
+        batchId: 'expired',
+      );
+
+      expect(service.expiryFor(item, noExpiry).status, BatchExpiryStatus.fresh);
+      expect(service.expiryFor(item, noExpiry).daysRemaining, isNull);
+      expect(service.expiryFor(item, fresh).status, BatchExpiryStatus.fresh);
+      expect(service.expiryFor(item, fresh).daysRemaining, 31);
+      expect(
+        service.expiryFor(item, soon).status,
+        BatchExpiryStatus.expiringSoon,
+      );
+      expect(service.expiryFor(item, soon).daysRemaining, 30);
+      expect(
+        service.expiryFor(item, today).status,
+        BatchExpiryStatus.expiringSoon,
+      );
+      expect(service.expiryFor(item, today).daysRemaining, 0);
+      expect(
+        service.expiryFor(item, expired).status,
+        BatchExpiryStatus.expired,
+      );
+      expect(service.expiryFor(item, expired).daysRemaining, -1);
+    });
+
+    test('filters and sorts expiry lists by nearest expiry', () {
+      final service = InventoryService(clock: () => DateTime.utc(2026, 7, 19));
+      final milk = service.addStock(
+        name: 'حليب',
+        category: 'الألبان',
+        quantity: 0,
+        minimum: 1,
+        unit: 'علبة',
+        location: 'الثلاجة',
+      );
+      service.addBatch(
+        milk,
+        quantity: 1,
+        expiresAt: DateTime.utc(2026, 7, 29),
+        batchId: 'milk-10',
+      );
+      service.addBatch(
+        milk,
+        quantity: 1,
+        expiresAt: DateTime.utc(2026, 7, 21),
+        batchId: 'milk-2',
+      );
+      final rice = service.addStock(
+        name: 'أرز',
+        category: 'الحبوب',
+        quantity: 0,
+        minimum: 1,
+        unit: 'كجم',
+        location: 'المخزن',
+      );
+      service.addBatch(
+        rice,
+        quantity: 1,
+        expiresAt: DateTime.utc(2026, 7, 18),
+        batchId: 'rice-expired-1',
+      );
+      service.addBatch(
+        rice,
+        quantity: 1,
+        expiresAt: DateTime.utc(2026, 7, 10),
+        batchId: 'rice-expired-9',
+      );
+
+      expect(service.expiringSoonBatches().map((info) => info.batch.id), [
+        'milk-2',
+        'milk-10',
+      ]);
+      expect(
+        service.expiringSoonBatches(query: 'حليب').map((info) => info.batch.id),
+        ['milk-2', 'milk-10'],
+      );
+      expect(
+        service.expiringSoonBatches(query: 'milk-10').single.batch.id,
+        'milk-10',
+      );
+      expect(service.expiredBatches().map((info) => info.batch.id), [
+        'rice-expired-1',
+        'rice-expired-9',
+      ]);
+    });
   });
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
 import 'models/shopping_models.dart';
 import 'products.dart';
@@ -299,6 +300,20 @@ class AppStore extends ChangeNotifier {
 
   List<InventoryBatch> batchesFor(PantryItem item) =>
       _inventory.batchesFor(item);
+
+  BatchExpiryInfo expiryFor(PantryItem item, InventoryBatch batch) =>
+      _inventory.expiryFor(item, batch);
+
+  List<BatchExpiryInfo> expiryBatches(
+    BatchExpiryStatus status, {
+    String query = '',
+  }) => _inventory.expiryBatches(status, query: query);
+
+  List<BatchExpiryInfo> expiringSoonBatches({String query = ''}) =>
+      _inventory.expiringSoonBatches(query: query);
+
+  List<BatchExpiryInfo> expiredBatches({String query = ''}) =>
+      _inventory.expiredBatches(query: query);
 
   int putPurchasedItemsInPantry(ShoppingListModel list) {
     final purchased = list.items.where((item) => item.done).toList();

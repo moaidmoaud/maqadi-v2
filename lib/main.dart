@@ -5,10 +5,12 @@
 import 'package:flutter/material.dart';
 
 import 'app_store.dart';
+import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
 import 'models/shopping_models.dart';
 import 'products.dart';
 import 'screens/batch_management_screen.dart';
+import 'screens/expiry_list_screen.dart';
 import 'utils/arabic_text.dart';
 
 void main() => runApp(const MaqadiApp());
@@ -316,6 +318,50 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickCard(
+                  icon: Icons.schedule,
+                  title: 'قريب الانتهاء',
+                  subtitle: '${widget.store.expiringSoonBatches().length} دفعة',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: ExpiryListScreen(
+                          store: widget.store,
+                          status: BatchExpiryStatus.expiringSoon,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickCard(
+                  icon: Icons.event_busy_outlined,
+                  title: 'منتهي الصلاحية',
+                  subtitle: '${widget.store.expiredBatches().length} دفعة',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: ExpiryListScreen(
+                          store: widget.store,
+                          status: BatchExpiryStatus.expired,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 22),
           Row(

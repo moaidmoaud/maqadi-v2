@@ -13,7 +13,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final inventory = InventoryService();
+    final inventory = InventoryService(clock: () => DateTime.utc(2026, 1, 15));
     final item = inventory.addStock(
       name: 'أرز',
       category: 'الحبوب',
@@ -44,6 +44,7 @@ void main() {
 
     expect(find.text('دفعات أرز'), findsOneWidget);
     expect(find.text('5 كجم'), findsOneWidget);
+    expect(find.text('طازج'), findsNWidgets(2));
     expect(
       find.text('ترتيب FIFO: تُستهلك الدفعات الأقدم شراءً أولاً.'),
       findsOneWidget,

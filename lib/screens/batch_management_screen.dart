@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../app_store.dart';
+import '../models/expiry_models.dart';
 import '../models/inventory_models.dart';
+import '../widgets/expiry_status_badge.dart';
 
 class BatchManagementScreen extends StatefulWidget {
   const BatchManagementScreen({
@@ -124,6 +126,7 @@ class _BatchManagementScreenState extends State<BatchManagementScreen> {
                       final batch = batches[index];
                       return _BatchCard(
                         batch: batch,
+                        expiryInfo: widget.store.expiryFor(widget.item, batch),
                         unit: widget.item.unit,
                         fifoPosition: index + 1,
                         onEdit: () => _showBatchEditor(batch),
@@ -234,6 +237,7 @@ class _FifoNotice extends StatelessWidget {
 class _BatchCard extends StatelessWidget {
   const _BatchCard({
     required this.batch,
+    required this.expiryInfo,
     required this.unit,
     required this.fifoPosition,
     required this.onEdit,
@@ -241,6 +245,7 @@ class _BatchCard extends StatelessWidget {
   });
 
   final InventoryBatch batch;
+  final BatchExpiryInfo expiryInfo;
   final String unit;
   final int fifoPosition;
   final VoidCallback onEdit;
@@ -271,6 +276,8 @@ class _BatchCard extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
+                const SizedBox(height: 7),
+                ExpiryStatusBadge(info: expiryInfo),
                 const SizedBox(height: 6),
                 _BatchDetail(
                   icon: Icons.shopping_cart_outlined,

@@ -1,5 +1,6 @@
 import 'dart:collection';
 
+import '../models/expiry_models.dart';
 import '../models/inventory_models.dart';
 import '../utils/arabic_text.dart';
 
@@ -76,6 +77,44 @@ class InventoryService {
       ..sort(_compareBatches);
     return List.unmodifiable(result);
   }
+
+  BatchExpiryInfo expiryFor(PantryItem item, InventoryBatch batch) {
+    _requireBatch(item, batch);
+    final daysRemaining = _daysRemaining(batch);
+    return BatchExpiryInfo(
+      item: item,
+      batch: batch,
+      status: _expiryStatus(daysRemaining),
+      daysRemaining: daysRemaining,
+    );
+  }
+
+  List<BatchExpiryInfo> expiryBatches(
+    BatchExpiryStatus status, {
+    String query = '',
+  }) {
+    final normalizedQuery = normalizeArabic(query);
+    final result = <BatchExpiryInfo>[];
+    for (final item in _items) {
+      for (final batch in item.batches.where((batch) => batch.quantity > 0)) {
+        final info = expiryFor(item, batch);
+        if (info.status != status) continue;
+        if (normalizedQuery.isNotEmpty &&
+            !_matchesExpiryQuery(item, batch, normalizedQuery)) {
+          continue;
+        }
+        result.add(info);
+      }
+    }
+    result.sort(_compareNearestExpiry);
+    return List.unmodifiable(result);
+  }
+
+  List<BatchExpiryInfo> expiringSoonBatches({String query = ''}) =>
+      expiryBatches(BatchExpiryStatus.expiringSoon, query: query);
+
+  List<BatchExpiryInfo> expiredBatches({String query = ''}) =>
+      expiryBatches(BatchExpiryStatus.expired, query: query);
 
   PantryItem addStock({
     required String name,
@@ -351,6 +390,52 @@ class InventoryService {
   int _compareBatches(InventoryBatch a, InventoryBatch b) {
     final byDate = a.receivedAt.compareTo(b.receivedAt);
     return byDate != 0 ? byDate : a.id.compareTo(b.id);
+  }
+
+  int? _daysRemaining(InventoryBatch batch) {
+    final expiresAt = batch.expiresAt;
+    if (expiresAt == null) return null;
+    return _dateOnly(expiresAt).difference(_dateOnly(_clock())).inDays;
+  }
+
+  BatchExpiryStatus _expiryStatus(int? daysRemaining) {
+    if (daysRemaining == null || daysRemaining > 30) {
+      return BatchExpiryStatus.fresh;
+    }
+    if (daysRemaining < 0) return BatchExpiryStatus.expired;
+    return BatchExpiryStatus.expiringSoon;
+  }
+
+  DateTime _dateOnly(DateTime value) =>
+      DateTime.utc(value.year, value.month, value.day);
+
+  bool _matchesExpiryQuery(
+    PantryItem item,
+    InventoryBatch batch,
+    String normalizedQuery,
+  ) {
+    return [
+      item.name,
+      item.category,
+      item.location,
+      batch.id,
+      batch.note ?? '',
+    ].any((value) => normalizeArabic(value).contains(normalizedQuery));
+  }
+
+  int _compareNearestExpiry(BatchExpiryInfo a, BatchExpiryInfo b) {
+    final aDays = a.daysRemaining;
+    final bDays = b.daysRemaining;
+    if (aDays == null || bDays == null) {
+      if (aDays == null && bDays == null) return 0;
+      return aDays == null ? 1 : -1;
+    }
+    final byDistance = aDays.abs().compareTo(bDays.abs());
+    if (byDistance != 0) return byDistance;
+    final byExpiry = a.batch.expiresAt!.compareTo(b.batch.expiresAt!);
+    if (byExpiry != 0) return byExpiry;
+    final byProduct = a.item.name.compareTo(b.item.name);
+    return byProduct != 0 ? byProduct : a.batch.id.compareTo(b.batch.id);
   }
 
   String _resolveBatchId(
