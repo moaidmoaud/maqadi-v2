@@ -13,6 +13,7 @@ import 'products.dart';
 import 'screens/batch_management_screen.dart';
 import 'screens/expiry_list_screen.dart';
 import 'utils/arabic_text.dart';
+import 'widgets/dashboard_analytics_panel.dart';
 import 'widgets/stock_status_badge.dart';
 
 void main() => runApp(const MaqadiApp());
@@ -143,6 +144,86 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openCurrentList([StockStatus? stockFilter]) {
+    final list = widget.store.lastList;
+    if (list == null) return;
+    _openList(list, initialStockFilter: stockFilter);
+  }
+
+  void _openPantry({bool addProduct = false}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: PantryScreen(
+            store: widget.store,
+            openAddProductEditor: addProduct,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openExpiry(BatchExpiryStatus status) {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: ExpiryListScreen(store: widget.store, status: status),
+        ),
+      ),
+    );
+  }
+
+  void _openProduct(PantryItem item) {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: BatchManagementScreen(store: widget.store, item: item),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBatchManagement() async {
+    final items = widget.store.pantryItems();
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('أضف منتجًا إلى المخزن أولًا')),
+      );
+      return;
+    }
+    final selected = await showModalBottomSheet<PantryItem>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+              title: Text(
+                'اختر منتجًا لإدارة دفعاته',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+            for (final item in items)
+              ListTile(
+                leading: const Icon(Icons.layers_outlined),
+                title: Text(item.name),
+                subtitle: Text(item.category),
+                onTap: () => Navigator.pop(context, item),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (selected != null && mounted) _openProduct(selected);
+  }
+
   Future<void> _confirmDelete(ShoppingListModel list) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -167,6 +248,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final last = widget.store.lastList;
+    final analytics = widget.store.dashboardAnalytics();
     final visibleLists =
         showArchived ? widget.store.archivedLists : widget.store.activeLists;
 
@@ -309,112 +391,19 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          _QuickCard(
-            icon: Icons.inventory_2_outlined,
-            title: 'مخزن المنزل',
-            subtitle:
-                '${widget.store.pantry.length} منتج • ${widget.store.lowStockItems.length} منخفض',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: PantryScreen(store: widget.store),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _QuickCard(
-                  icon: Icons.warning_amber_rounded,
-                  title: 'مخزون منخفض',
-                  subtitle:
-                      '${widget.store.stockItems(StockStatus.lowStock).length} منتج',
-                  onTap: () {
-                    final list = widget.store.lastList;
-                    if (list != null) {
-                      _openList(list, initialStockFilter: StockStatus.lowStock);
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _QuickCard(
-                  icon: Icons.remove_shopping_cart_outlined,
-                  title: 'نفد المخزون',
-                  subtitle:
-                      '${widget.store.stockItems(StockStatus.outOfStock).length} منتج',
-                  onTap: () {
-                    final list = widget.store.lastList;
-                    if (list != null) {
-                      _openList(
-                        list,
-                        initialStockFilter: StockStatus.outOfStock,
-                      );
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _QuickCard(
-            icon: Icons.shopping_cart_outlined,
-            title: 'عناصر قائمة التسوق',
-            subtitle: '${widget.store.shoppingListItemCount} عنصر',
-            onTap: () {
-              final list = widget.store.lastList;
-              if (list != null) _openList(list);
-            },
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _QuickCard(
-                  icon: Icons.schedule,
-                  title: 'قريب الانتهاء',
-                  subtitle: '${widget.store.expiringSoonBatches().length} دفعة',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => Directionality(
-                        textDirection: TextDirection.rtl,
-                        child: ExpiryListScreen(
-                          store: widget.store,
-                          status: BatchExpiryStatus.expiringSoon,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _QuickCard(
-                  icon: Icons.event_busy_outlined,
-                  title: 'منتهي الصلاحية',
-                  subtitle: '${widget.store.expiredBatches().length} دفعة',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => Directionality(
-                        textDirection: TextDirection.rtl,
-                        child: ExpiryListScreen(
-                          store: widget.store,
-                          status: BatchExpiryStatus.expired,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          const SizedBox(height: 16),
+          DashboardAnalyticsPanel(
+            analytics: analytics,
+            onSearch: widget.store.searchDashboard,
+            onOpenProduct: _openProduct,
+            onPantry: _openPantry,
+            onAddProduct: () => _openPantry(addProduct: true),
+            onShoppingList: () => _openCurrentList(),
+            onLowStock: () => _openCurrentList(StockStatus.lowStock),
+            onOutOfStock: () => _openCurrentList(StockStatus.outOfStock),
+            onExpiringSoon: () => _openExpiry(BatchExpiryStatus.expiringSoon),
+            onExpired: () => _openExpiry(BatchExpiryStatus.expired),
+            onBatchManagement: _openBatchManagement,
           ),
           const SizedBox(height: 22),
           Row(
@@ -554,8 +543,13 @@ class _QuickCard extends StatelessWidget {
 }
 
 class PantryScreen extends StatefulWidget {
-  const PantryScreen({super.key, required this.store});
+  const PantryScreen({
+    super.key,
+    required this.store,
+    this.openAddProductEditor = false,
+  });
   final AppStore store;
+  final bool openAddProductEditor;
 
   @override
   State<PantryScreen> createState() => _PantryScreenState();
@@ -565,6 +559,16 @@ class _PantryScreenState extends State<PantryScreen> {
   String query = '';
   String location = 'الكل';
   bool lowOnly = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.openAddProductEditor) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showEditor();
+      });
+    }
+  }
 
   Future<void> _showEditor([PantryItem? item]) async {
     final name = TextEditingController(text: item?.name ?? '');

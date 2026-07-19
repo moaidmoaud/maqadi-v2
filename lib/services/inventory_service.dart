@@ -1,5 +1,6 @@
 import 'dart:collection';
 
+import '../models/dashboard_analytics_models.dart';
 import '../models/expiry_models.dart';
 import '../models/inventory_models.dart';
 import '../models/shopping_models.dart';
@@ -25,6 +26,11 @@ class InventoryService {
   final InventoryClock _clock;
   final InventoryIdFactory? _idFactory;
   int _idCounter = 0;
+  int _analyticsRevision = 0;
+  int _cachedAnalyticsRevision = -1;
+  int _cachedShoppingListItems = -1;
+  DateTime? _cachedAnalyticsDay;
+  DashboardAnalytics? _cachedAnalytics;
 
   UnmodifiableListView<PantryItem> get items => UnmodifiableListView(_items);
 
@@ -41,6 +47,7 @@ class InventoryService {
     _movements
       ..clear()
       ..addAll(movements);
+    _invalidateAnalytics();
   }
 
   List<PantryItem> get lowStockItems {
@@ -98,7 +105,9 @@ class InventoryService {
     final normalizedQuery = normalizeArabic(query);
     final result = _items.where((item) {
       final info = stockInfoFor(item);
-      final matchesQuery = normalizeArabic(item.name).contains(normalizedQuery);
+      final matchesQuery = normalizeArabic(
+        item.name,
+      ).contains(normalizedQuery);
       final matchesLocation = location == null || item.location == location;
       final matchesStatus =
           !needsShoppingOnly || info.status != StockStatus.normalStock;
@@ -271,6 +280,172 @@ class InventoryService {
   List<BatchExpiryInfo> expiredBatches({String query = ''}) =>
       expiryBatches(BatchExpiryStatus.expired, query: query);
 
+  DashboardAnalytics dashboardAnalytics({required int shoppingListItems}) {
+    final today = _dateOnly(_clock());
+    final cached = _cachedAnalytics;
+    if (cached != null &&
+        _cachedAnalyticsRevision == _analyticsRevision &&
+        _cachedShoppingListItems == shoppingListItems &&
+        _cachedAnalyticsDay == today) {
+      return cached;
+    }
+
+    var totalBatches = 0;
+    var totalQuantity = 0.0;
+    var lowStock = 0;
+    var outOfStock = 0;
+    var fresh = 0;
+    var expiringSoon = 0;
+    var expired = 0;
+    final categories = <String, int>{};
+    final insights = <ProductAnalyticsInsight>[];
+
+    for (final item in _items) {
+      final stock = stockInfoFor(item);
+      totalQuantity += stock.currentQuantity;
+      switch (stock.status) {
+        case StockStatus.lowStock:
+          lowStock++;
+        case StockStatus.outOfStock:
+          outOfStock++;
+        case StockStatus.normalStock:
+          break;
+      }
+      categories[item.category] = (categories[item.category] ?? 0) + 1;
+      insights.add(_analyticsInsightFor(item));
+
+      for (final batch in item.batches.where((batch) => batch.quantity > 0)) {
+        totalBatches++;
+        switch (expiryFor(item, batch).status) {
+          case BatchExpiryStatus.fresh:
+            fresh++;
+          case BatchExpiryStatus.expiringSoon:
+            expiringSoon++;
+          case BatchExpiryStatus.expired:
+            expired++;
+        }
+      }
+    }
+
+    final topProducts = List<ProductAnalyticsInsight>.from(insights)
+      ..sort((a, b) {
+        final byQuantity = b.quantity.compareTo(a.quantity);
+        return byQuantity != 0
+            ? byQuantity
+            : a.item.name.compareTo(b.item.name);
+      });
+    final lowestStock = List<ProductAnalyticsInsight>.from(insights)
+      ..sort((a, b) {
+        final byQuantity = a.quantity.compareTo(b.quantity);
+        return byQuantity != 0
+            ? byQuantity
+            : a.item.name.compareTo(b.item.name);
+      });
+    final recentlyUpdated = List<ProductAnalyticsInsight>.from(insights)
+      ..sort((a, b) {
+        final byDate = _compareRecentDates(a.updatedAt, b.updatedAt);
+        return byDate != 0 ? byDate : a.item.name.compareTo(b.item.name);
+      });
+    final recentlyAdded = List<ProductAnalyticsInsight>.from(insights)
+      ..sort((a, b) {
+        final byDate = _compareRecentDates(a.addedAt, b.addedAt);
+        return byDate != 0 ? byDate : a.item.name.compareTo(b.item.name);
+      });
+    final categoryDistribution = categories.entries
+        .map(
+          (entry) =>
+              AnalyticsDistribution(label: entry.key, value: entry.value),
+        )
+        .toList()
+      ..sort((a, b) {
+        final byCount = b.value.compareTo(a.value);
+        return byCount != 0 ? byCount : a.label.compareTo(b.label);
+      });
+
+    final analytics = DashboardAnalytics(
+      summary: DashboardSummary(
+        totalProducts: _items.length,
+        totalBatches: totalBatches,
+        totalQuantity: totalQuantity,
+        lowStock: lowStock,
+        outOfStock: outOfStock,
+        expiringSoon: expiringSoon,
+        expired: expired,
+        shoppingListItems: shoppingListItems,
+      ),
+      topProducts: List.unmodifiable(topProducts.take(10)),
+      lowestStockProducts: List.unmodifiable(lowestStock.take(10)),
+      recentlyUpdatedProducts: List.unmodifiable(recentlyUpdated.take(10)),
+      recentlyAddedProducts: List.unmodifiable(recentlyAdded.take(10)),
+      stockStatusDistribution: List.unmodifiable([
+        AnalyticsDistribution(
+          label: 'طبيعي',
+          value: _items.length - lowStock - outOfStock,
+        ),
+        AnalyticsDistribution(label: 'منخفض', value: lowStock),
+        AnalyticsDistribution(label: 'نافد', value: outOfStock),
+      ]),
+      expiryStatusDistribution: List.unmodifiable([
+        AnalyticsDistribution(label: 'طازج', value: fresh),
+        AnalyticsDistribution(
+            label: 'قريبة خلال 30 يومًا', value: expiringSoon),
+        AnalyticsDistribution(label: 'منتهية', value: expired),
+      ]),
+      categoryDistribution: List.unmodifiable(categoryDistribution),
+    );
+    _cachedAnalytics = analytics;
+    _cachedAnalyticsRevision = _analyticsRevision;
+    _cachedShoppingListItems = shoppingListItems;
+    _cachedAnalyticsDay = today;
+    return analytics;
+  }
+
+  List<DashboardSearchResult> searchDashboard(String query) {
+    final tokens = searchTokens(query);
+    if (tokens.isEmpty) return const [];
+    final results = <DashboardSearchResult>[];
+    for (final item in _items) {
+      final normalizedName = normalizeArabic(item.name);
+      final normalizedCategory = normalizeArabic(item.category);
+      final normalizedBatchIds = {
+        for (final batch in item.batches) batch.id: normalizeArabic(batch.id),
+      };
+      final searchable = [
+        normalizedName,
+        normalizedCategory,
+        ...normalizedBatchIds.values,
+      ].join(' ');
+      if (!tokens.every(searchable.contains)) continue;
+
+      final matchedFields = <String>[];
+      if (tokens.any(normalizedName.contains)) matchedFields.add('اسم المنتج');
+      if (tokens.any(normalizedCategory.contains)) {
+        matchedFields.add('التصنيف');
+      }
+      final matchedBatchIds = normalizedBatchIds.entries
+          .where((entry) => tokens.any(entry.value.contains))
+          .map((entry) => entry.key)
+          .toList()
+        ..sort();
+      if (matchedBatchIds.isNotEmpty) matchedFields.add('معرّف الدفعة');
+      results.add(
+        DashboardSearchResult(
+          item: item,
+          matchedFields: List.unmodifiable(matchedFields),
+          matchedBatchIds: List.unmodifiable(matchedBatchIds),
+        ),
+      );
+    }
+    results.sort((a, b) {
+      final byRank = _dashboardSearchRank(
+        a.item,
+        tokens,
+      ).compareTo(_dashboardSearchRank(b.item, tokens));
+      return byRank != 0 ? byRank : a.item.name.compareTo(b.item.name);
+    });
+    return List.unmodifiable(results.take(20));
+  }
+
   PantryItem addStock({
     required String name,
     required String category,
@@ -390,15 +565,13 @@ class InventoryService {
       ..note = _cleanOptionalText(note);
 
     final delta = cleanQuantity - previousQuantity;
-    if (delta != 0) {
-      _recordMovement(
-        item,
-        'تعديل دفعة',
-        delta,
-        note: batch.note,
-        batchAllocations: {resolvedId: delta},
-      );
-    }
+    _recordMovement(
+      item,
+      'تعديل دفعة',
+      delta,
+      note: batch.note,
+      batchAllocations: delta == 0 ? const {} : {resolvedId: delta},
+    );
   }
 
   void deleteBatch(PantryItem item, InventoryBatch batch) {
@@ -464,6 +637,11 @@ class InventoryService {
     required String unit,
     required String location,
   }) {
+    final detailsChanged = item.name != name ||
+        item.category != category ||
+        item.minimum != minimum.clamp(0, 999999).toDouble() ||
+        item.unit != unit ||
+        item.location != location;
     item
       ..name = name
       ..category = category
@@ -489,6 +667,8 @@ class InventoryService {
       if (actual > 0) {
         _recordMovement(item, 'تعديل', -actual, batchAllocations: allocations);
       }
+    } else if (detailsChanged) {
+      _recordMovement(item, 'تحديث بيانات', 0);
     }
   }
 
@@ -498,6 +678,58 @@ class InventoryService {
       if (normalizeArabic(item.name) == normalized) return item;
     }
     return null;
+  }
+
+  ProductAnalyticsInsight _analyticsInsightFor(PantryItem item) {
+    DateTime? addedAt;
+    DateTime? updatedAt;
+    for (final movement in _movements) {
+      if (movement.pantryItemId != item.id) continue;
+      if (addedAt == null || movement.createdAt.isBefore(addedAt)) {
+        addedAt = movement.createdAt;
+      }
+      if (updatedAt == null || movement.createdAt.isAfter(updatedAt)) {
+        updatedAt = movement.createdAt;
+      }
+    }
+    if (addedAt == null || updatedAt == null) {
+      for (final batch in item.batches) {
+        if (addedAt == null || batch.receivedAt.isBefore(addedAt)) {
+          addedAt = batch.receivedAt;
+        }
+        if (updatedAt == null || batch.receivedAt.isAfter(updatedAt)) {
+          updatedAt = batch.receivedAt;
+        }
+      }
+    }
+    return ProductAnalyticsInsight(
+      item: item,
+      quantity: item.quantity,
+      addedAt: addedAt,
+      updatedAt: updatedAt,
+    );
+  }
+
+  int _compareRecentDates(DateTime? a, DateTime? b) {
+    if (a == null || b == null) {
+      if (a == null && b == null) return 0;
+      return a == null ? 1 : -1;
+    }
+    return b.compareTo(a);
+  }
+
+  int _dashboardSearchRank(PantryItem item, List<String> tokens) {
+    final name = normalizeArabic(item.name);
+    if (tokens.every(name.contains)) return 0;
+    final category = normalizeArabic(item.category);
+    if (tokens.every(category.contains)) return 1;
+    if (item.batches.any((batch) {
+      final id = normalizeArabic(batch.id);
+      return tokens.every(id.contains);
+    })) {
+      return 2;
+    }
+    return 3;
   }
 
   PantryItem? _pantryItemFor(GroceryItem grocery) {
@@ -522,6 +754,7 @@ class InventoryService {
   void deleteItem(PantryItem item) {
     _items.remove(item);
     _movements.removeWhere((movement) => movement.pantryItemId == item.id);
+    _invalidateAnalytics();
   }
 
   InventoryBatch _appendBatch(
@@ -680,6 +913,12 @@ class InventoryService {
         batchAllocations: batchAllocations,
       ),
     );
+    _invalidateAnalytics();
+  }
+
+  void _invalidateAnalytics() {
+    _analyticsRevision++;
+    _cachedAnalytics = null;
   }
 
   String _newId() {

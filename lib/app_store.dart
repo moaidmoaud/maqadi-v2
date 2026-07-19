@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'models/dashboard_analytics_models.dart';
 import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
 import 'models/shopping_models.dart';
@@ -340,6 +341,12 @@ class AppStore extends ChangeNotifier {
 
   int get shoppingListItemCount =>
       lastList?.items.where((item) => !item.done).length ?? 0;
+
+  DashboardAnalytics dashboardAnalytics() =>
+      _inventory.dashboardAnalytics(shoppingListItems: shoppingListItemCount);
+
+  List<DashboardSearchResult> searchDashboard(String query) =>
+      _inventory.searchDashboard(query);
 
   List<PantryMovement> movementsFor(PantryItem item) =>
       _inventory.movementsFor(item);
