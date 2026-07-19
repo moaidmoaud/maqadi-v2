@@ -18,23 +18,23 @@ class ExpiryStatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (background, foreground, icon, text) = switch (info.status) {
       BatchExpiryStatus.fresh => (
-        freshBackground,
-        freshForeground,
-        Icons.check_circle_outline,
-        _freshText(info.daysRemaining),
-      ),
+          freshBackground,
+          freshForeground,
+          Icons.check_circle_outline,
+          _freshText(info.daysRemaining),
+        ),
       BatchExpiryStatus.expiringSoon => (
-        expiringSoonBackground,
-        expiringSoonForeground,
-        Icons.schedule,
-        _expiringSoonText(info.daysRemaining!),
-      ),
+          expiringSoonBackground,
+          expiringSoonForeground,
+          Icons.schedule,
+          _expiringSoonText(info.daysRemaining!),
+        ),
       BatchExpiryStatus.expired => (
-        expiredBackground,
-        expiredForeground,
-        Icons.error_outline,
-        _expiredText(info.daysRemaining!),
-      ),
+          expiredBackground,
+          expiredForeground,
+          Icons.error_outline,
+          _expiredText(info.daysRemaining!),
+        ),
     };
 
     return Container(

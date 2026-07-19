@@ -7,6 +7,7 @@ import 'models/dashboard_analytics_models.dart';
 import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
 import 'models/notification_models.dart';
+import 'models/report_models.dart';
 import 'models/shopping_models.dart';
 import 'models/stock_models.dart';
 import 'products.dart';
@@ -15,6 +16,8 @@ import 'repositories/shared_preferences_app_repository.dart';
 import 'services/inventory_service.dart';
 import 'services/local_notification_scheduler.dart';
 import 'services/notification_scheduler.dart';
+import 'services/report_delivery.dart';
+import 'services/report_service.dart';
 import 'utils/arabic_text.dart';
 
 class AppStore extends ChangeNotifier {
@@ -22,14 +25,22 @@ class AppStore extends ChangeNotifier {
     AppRepository? repository,
     InventoryService? inventoryService,
     NotificationScheduler? notificationScheduler,
+    ReportGenerator? reportGenerator,
+    ReportDelivery? reportDelivery,
   })  : _repository = repository ?? SharedPreferencesAppRepository(),
         _inventory = inventoryService ?? InventoryService(),
         _notificationScheduler =
-            notificationScheduler ?? LocalNotificationScheduler();
+            notificationScheduler ?? LocalNotificationScheduler() {
+    _reportGenerator =
+        reportGenerator ?? ReportService(inventoryService: _inventory);
+    _reportDelivery = reportDelivery ?? const PlatformReportDelivery();
+  }
 
   final AppRepository _repository;
   final InventoryService _inventory;
   final NotificationScheduler _notificationScheduler;
+  late final ReportGenerator _reportGenerator;
+  late final ReportDelivery _reportDelivery;
   final List<ShoppingListModel> lists = [];
   final Set<String> favorites = {};
   final Map<String, int> frequency = {};
@@ -43,6 +54,41 @@ class AppStore extends ChangeNotifier {
 
   List<PantryItem> get pantry => _inventory.items;
   List<PantryMovement> get pantryMovements => _inventory.movements;
+  List<String> get reportCategories => _reportGenerator.categories;
+
+  Future<GeneratedReportFile> generatePdfReport(
+    PdfReportType type, {
+    ReportFilter filter = const ReportFilter(),
+  }) =>
+      _reportGenerator.generatePdf(
+        type,
+        filter: filter,
+        shoppingItems: lastList?.items ?? const [],
+      );
+
+  GeneratedReportFile generateExcelReport({
+    ReportFilter filter = const ReportFilter(),
+  }) =>
+      _reportGenerator.generateExcel(
+        filter: filter,
+        shoppingItems: lastList?.items ?? const [],
+      );
+
+  GeneratedReportFile generateCsvReport(
+    CsvReportType type, {
+    ReportFilter filter = const ReportFilter(),
+  }) =>
+      _reportGenerator.generateCsv(
+        type,
+        filter: filter,
+        shoppingItems: lastList?.items ?? const [],
+      );
+
+  Future<void> shareReport(GeneratedReportFile file) =>
+      _reportDelivery.share(file);
+
+  Future<void> printReport(GeneratedReportFile file) =>
+      _reportDelivery.printPdf(file);
 
   List<ShoppingListModel> get activeLists {
     final result = lists.where((list) => !list.archived).toList();

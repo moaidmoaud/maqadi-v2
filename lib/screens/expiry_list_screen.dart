@@ -7,7 +7,7 @@ import 'batch_management_screen.dart';
 
 class ExpiryListScreen extends StatefulWidget {
   const ExpiryListScreen({super.key, required this.store, required this.status})
-    : assert(status != BatchExpiryStatus.fresh);
+      : assert(status != BatchExpiryStatus.fresh);
 
   final AppStore store;
   final BatchExpiryStatus status;
@@ -104,52 +104,55 @@ class _ExpiryBatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            CircleAvatar(
-              child: Text(
-                info.item.name.isEmpty ? '?' : info.item.name.characters.first,
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  child: Text(
+                    info.item.name.isEmpty
+                        ? '?'
+                        : info.item.name.characters.first,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        info.item.name,
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${_formatQuantity(info.batch.quantity)} ${info.item.unit} '
+                        '• ${info.item.location}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'تاريخ الانتهاء: ${_formatDate(info.batch.expiresAt!)}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      ExpiryStatusBadge(info: info),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_left),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    info.item.name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${_formatQuantity(info.batch.quantity)} ${info.item.unit} '
-                    '• ${info.item.location}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    'تاريخ الانتهاء: ${_formatDate(info.batch.expiresAt!)}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 8),
-                  ExpiryStatusBadge(info: info),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_left),
-          ],
+          ),
         ),
-      ),
-    ),
-  );
+      );
 }
 
 class _ExpiryEmptyState extends StatelessWidget {
@@ -160,30 +163,30 @@ class _ExpiryEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.event_available_outlined, size: 64),
-          const SizedBox(height: 12),
-          Text(
-            hasQuery ? 'لا توجد نتائج مطابقة' : 'لا توجد دفعات: $title',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.w800),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.event_available_outlined, size: 64),
+              const SizedBox(height: 12),
+              Text(
+                hasQuery ? 'لا توجد نتائج مطابقة' : 'لا توجد دفعات: $title',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
           ),
-        ],
-      ),
-    ),
-  );
+        ),
+      );
 }
 
 String _formatQuantity(double value) => value == value.roundToDouble()
     ? value.toInt().toString()
     : value
-          .toStringAsFixed(2)
-          .replaceFirst(RegExp(r'0+$'), '')
-          .replaceFirst(RegExp(r'\.$'), '');
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
 
 String _formatDate(DateTime value) {
   final local = value.toLocal();

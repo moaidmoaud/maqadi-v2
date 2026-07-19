@@ -14,6 +14,7 @@ import 'products.dart';
 import 'screens/batch_management_screen.dart';
 import 'screens/barcode_scanner_screen.dart';
 import 'screens/expiry_list_screen.dart';
+import 'screens/reports_screen.dart';
 import 'utils/arabic_text.dart';
 import 'widgets/dashboard_analytics_panel.dart';
 import 'widgets/notification_settings_card.dart';
@@ -308,6 +309,16 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
 
+  void _openReports() => Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: ReportsScreen(store: widget.store),
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final last = widget.store.lastList;
@@ -322,6 +333,12 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('open-reports'),
+            tooltip: 'التقارير والتصدير',
+            onPressed: _openReports,
+            icon: const Icon(Icons.file_present_outlined),
+          ),
           IconButton(
             key: const ValueKey('scan-inventory-code'),
             tooltip: 'مسح باركود أو QR',

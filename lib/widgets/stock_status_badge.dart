@@ -18,23 +18,23 @@ class StockStatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (background, foreground, icon, label) = switch (info.status) {
       StockStatus.normalStock => (
-        normalBackground,
-        normalForeground,
-        Icons.check_circle_outline,
-        'مخزون طبيعي',
-      ),
+          normalBackground,
+          normalForeground,
+          Icons.check_circle_outline,
+          'مخزون طبيعي',
+        ),
       StockStatus.lowStock => (
-        lowBackground,
-        lowForeground,
-        Icons.warning_amber_rounded,
-        'مخزون منخفض',
-      ),
+          lowBackground,
+          lowForeground,
+          Icons.warning_amber_rounded,
+          'مخزون منخفض',
+        ),
       StockStatus.outOfStock => (
-        outBackground,
-        outForeground,
-        Icons.remove_shopping_cart_outlined,
-        'نفد المخزون',
-      ),
+          outBackground,
+          outForeground,
+          Icons.remove_shopping_cart_outlined,
+          'نفد المخزون',
+        ),
     };
     return Container(
       key: const ValueKey('stock-status-badge'),

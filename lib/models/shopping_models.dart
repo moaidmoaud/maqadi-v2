@@ -16,24 +16,23 @@ class GroceryItem {
   final String? pantryItemId;
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'category': category,
-    'done': done,
-    'quantity': quantity,
-    if (pantryItemId != null) 'pantryItemId': pantryItemId,
-  };
+        'id': id,
+        'name': name,
+        'category': category,
+        'done': done,
+        'quantity': quantity,
+        if (pantryItemId != null) 'pantryItemId': pantryItemId,
+      };
 
   factory GroceryItem.fromJson(Map<String, dynamic> json) => GroceryItem(
-    id:
-        json['id'] as String? ??
-        DateTime.now().microsecondsSinceEpoch.toString(),
-    name: json['name'] as String? ?? '',
-    category: json['category'] as String? ?? 'أخرى',
-    done: json['done'] as bool? ?? false,
-    quantity: json['quantity'] as int? ?? json['qty'] as int? ?? 1,
-    pantryItemId: json['pantryItemId'] as String?,
-  );
+        id: json['id'] as String? ??
+            DateTime.now().microsecondsSinceEpoch.toString(),
+        name: json['name'] as String? ?? '',
+        category: json['category'] as String? ?? 'أخرى',
+        done: json['done'] as bool? ?? false,
+        quantity: json['quantity'] as int? ?? json['qty'] as int? ?? 1,
+        pantryItemId: json['pantryItemId'] as String?,
+      );
 }
 
 class ShoppingListModel {
@@ -58,13 +57,13 @@ class ShoppingListModel {
   double get progress => items.isEmpty ? 0 : completedCount / items.length;
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-    'items': items.map((item) => item.toJson()).toList(),
-    'archived': archived,
-  };
+        'id': id,
+        'name': name,
+        'createdAt': createdAt.toIso8601String(),
+        'updatedAt': updatedAt.toIso8601String(),
+        'items': items.map((item) => item.toJson()).toList(),
+        'archived': archived,
+      };
 
   factory ShoppingListModel.fromJson(Map<String, dynamic> json) {
     final now = DateTime.now();
