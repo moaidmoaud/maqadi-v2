@@ -324,7 +324,10 @@ class _HomeScreenState extends State<HomeScreen> {
         MaterialPageRoute<void>(
           builder: (_) => Directionality(
             textDirection: TextDirection.rtl,
-            child: PurchaseListScreen(service: widget.store.purchaseService),
+            child: PurchaseListScreen(
+              service: widget.store.purchaseService,
+              storeService: widget.store.storeService,
+            ),
           ),
         ),
       );

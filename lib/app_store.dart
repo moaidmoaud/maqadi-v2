@@ -17,6 +17,8 @@ import 'repositories/purchase_repository.dart';
 import 'repositories/shared_preferences_app_repository.dart';
 import 'repositories/shared_preferences_price_history_repository.dart';
 import 'repositories/shared_preferences_purchase_repository.dart';
+import 'repositories/shared_preferences_store_repository.dart';
+import 'repositories/store_repository.dart';
 import 'services/inventory_service.dart';
 import 'services/local_notification_scheduler.dart';
 import 'services/notification_scheduler.dart';
@@ -24,6 +26,7 @@ import 'services/price_history_service.dart';
 import 'services/purchase_service.dart';
 import 'services/report_delivery.dart';
 import 'services/report_service.dart';
+import 'services/store_service.dart';
 import 'utils/arabic_text.dart';
 
 class AppStore extends ChangeNotifier {
@@ -33,11 +36,15 @@ class AppStore extends ChangeNotifier {
     PriceHistoryService? priceHistoryService,
     PurchaseRepository? purchaseRepository,
     PurchaseService? purchaseService,
+    StoreRepository? storeRepository,
+    StoreService? storeService,
     InventoryService? inventoryService,
     NotificationScheduler? notificationScheduler,
     ReportGenerator? reportGenerator,
     ReportDelivery? reportDelivery,
   })  : _repository = repository ?? SharedPreferencesAppRepository(),
+        _purchaseRepository =
+            purchaseRepository ?? SharedPreferencesPurchaseRepository(),
         _inventory = inventoryService ?? InventoryService(),
         _notificationScheduler =
             notificationScheduler ?? LocalNotificationScheduler() {
@@ -49,23 +56,30 @@ class AppStore extends ChangeNotifier {
           repository: priceHistoryRepository ??
               SharedPreferencesPriceHistoryRepository(),
         );
+    _storeService = storeService ??
+        StoreService(
+          repository: storeRepository ?? SharedPreferencesStoreRepository(),
+          purchaseRepository: _purchaseRepository,
+        );
     _purchaseService = purchaseService ??
         PurchaseService(
-          repository:
-              purchaseRepository ?? SharedPreferencesPurchaseRepository(),
+          repository: _purchaseRepository,
           inventoryService: _inventory,
           priceHistoryService: _priceHistoryService,
+          storeService: _storeService,
           persistInventory: _persistPurchaseInventory,
         );
   }
 
   final AppRepository _repository;
+  final PurchaseRepository _purchaseRepository;
   final InventoryService _inventory;
   final NotificationScheduler _notificationScheduler;
   late final ReportGenerator _reportGenerator;
   late final ReportDelivery _reportDelivery;
   late final PriceHistoryService _priceHistoryService;
   late final PurchaseService _purchaseService;
+  late final StoreService _storeService;
   final List<ShoppingListModel> lists = [];
   final Set<String> favorites = {};
   final Map<String, int> frequency = {};
@@ -82,6 +96,7 @@ class AppStore extends ChangeNotifier {
   List<String> get reportCategories => _reportGenerator.categories;
   PriceHistoryService get priceHistoryService => _priceHistoryService;
   PurchaseService get purchaseService => _purchaseService;
+  StoreService get storeService => _storeService;
 
   Future<GeneratedReportFile> generatePdfReport(
     PdfReportType type, {

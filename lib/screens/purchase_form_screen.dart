@@ -28,7 +28,8 @@ class _PurchaseFormScreenState extends State<PurchaseFormScreen> {
   late DateTime _purchaseDate;
   late final List<PurchaseProductOption> _products;
   late final List<_PurchaseItemEditor> _items;
-  List<String> _stores = const [];
+  List<Store> _stores = const [];
+  String? _selectedStoreId;
   PurchaseTotals? _totals;
   bool _busy = false;
 
@@ -42,6 +43,7 @@ class _PurchaseFormScreenState extends State<PurchaseFormScreen> {
     _purchaseDate = purchase?.purchaseDate ?? DateTime.now();
     _products = widget.service.availableProducts();
     _storeController = TextEditingController(text: purchase?.storeId ?? '');
+    _selectedStoreId = purchase?.storeId;
     _notesController = TextEditingController(text: purchase?.notes ?? '');
     _discountController = TextEditingController(
       text: purchase == null ? '0' : purchase.discount.toStringAsFixed(2),
@@ -56,8 +58,20 @@ class _PurchaseFormScreenState extends State<PurchaseFormScreen> {
         .toList();
     _discountController.addListener(_refreshTotals);
     _taxController.addListener(_refreshTotals);
-    widget.service.readStoreIds().then((stores) {
-      if (mounted) setState(() => _stores = stores);
+    widget.service
+        .availableStoresForPurchase(currentStoreId: purchase?.storeId)
+        .then((stores) {
+      if (!mounted) return;
+      if (purchase != null) {
+        for (final store in stores) {
+          if (store.id == purchase.storeId) {
+            _storeController.text = store.name;
+            _selectedStoreId = store.id;
+            break;
+          }
+        }
+      }
+      setState(() => _stores = stores);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshTotals());
   }
@@ -183,13 +197,14 @@ class _PurchaseFormScreenState extends State<PurchaseFormScreen> {
     setState(() => _busy = true);
     try {
       final items = _purchaseItems();
+      final storeId = _selectedStoreId ?? _storeController.text;
       final discount = _amount(_discountController.text);
       final tax = _amount(_taxController.text);
       if (_editing) {
         final source = widget.initialPurchase!;
         await widget.service.updatePurchase(
           purchase: source.copyWith(
-            storeId: _storeController.text,
+            storeId: storeId,
             purchaseDate: _purchaseDate,
             notes: _notesController.text,
             clearNotes: _notesController.text.trim().isEmpty,
@@ -201,7 +216,7 @@ class _PurchaseFormScreenState extends State<PurchaseFormScreen> {
       } else {
         await widget.service.createPurchase(
           id: _purchaseId,
-          storeId: _storeController.text,
+          storeId: storeId,
           purchaseDate: _purchaseDate,
           items: items,
           discountAmount: discount,
@@ -240,8 +255,10 @@ class _PurchaseFormScreenState extends State<PurchaseFormScreen> {
               notesController: _notesController,
               purchaseDate: _purchaseDate,
               stores: _stores,
+              onStoreTextChanged: (_) => _selectedStoreId = null,
               onStoreSelected: (store) {
-                _storeController.text = store;
+                _storeController.text = store.name;
+                _selectedStoreId = store.id;
                 setState(() {});
               },
               onPickDate: _pickPurchaseDate,
@@ -317,6 +334,7 @@ class _PurchaseHeaderFields extends StatelessWidget {
     required this.notesController,
     required this.purchaseDate,
     required this.stores,
+    required this.onStoreTextChanged,
     required this.onStoreSelected,
     required this.onPickDate,
   });
@@ -324,8 +342,9 @@ class _PurchaseHeaderFields extends StatelessWidget {
   final TextEditingController storeController;
   final TextEditingController notesController;
   final DateTime purchaseDate;
-  final List<String> stores;
-  final ValueChanged<String> onStoreSelected;
+  final List<Store> stores;
+  final ValueChanged<String> onStoreTextChanged;
+  final ValueChanged<Store> onStoreSelected;
   final VoidCallback onPickDate;
 
   @override
@@ -338,6 +357,7 @@ class _PurchaseHeaderFields extends StatelessWidget {
               TextField(
                 key: const ValueKey('purchase-store'),
                 controller: storeController,
+                onChanged: onStoreTextChanged,
                 decoration: const InputDecoration(
                   labelText: 'المتجر *',
                   border: OutlineInputBorder(),
@@ -351,7 +371,9 @@ class _PurchaseHeaderFields extends StatelessWidget {
                   children: [
                     for (final store in stores)
                       ActionChip(
-                        label: Text(store),
+                        label: Text(
+                          store.isActive ? store.name : '${store.name} (مؤرشف)',
+                        ),
                         onPressed: () => onStoreSelected(store),
                       ),
                   ],

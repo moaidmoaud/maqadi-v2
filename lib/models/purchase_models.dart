@@ -3,47 +3,69 @@ class Store {
     required this.id,
     required this.name,
     required this.createdAt,
-    this.address,
+    DateTime? updatedAt,
+    String? branch,
+    String? address,
     this.notes,
-  });
+    this.isActive = true,
+  })  : branch = branch ?? address,
+        updatedAt = updatedAt ?? createdAt;
 
   final String id;
   final String name;
-  final String? address;
+  final String? branch;
   final String? notes;
+  final bool isActive;
   final DateTime createdAt;
+  final DateTime updatedAt;
+
+  // Legacy alias retained for Phase 5.1 JSON and callers.
+  String? get address => branch;
 
   Store copyWith({
     String? id,
     String? name,
+    String? branch,
+    bool clearBranch = false,
     String? address,
     bool clearAddress = false,
     String? notes,
     bool clearNotes = false,
+    bool? isActive,
     DateTime? createdAt,
+    DateTime? updatedAt,
   }) =>
       Store(
         id: id ?? this.id,
         name: name ?? this.name,
-        address: clearAddress ? null : address ?? this.address,
+        branch: clearBranch || clearAddress
+            ? null
+            : branch ?? address ?? this.branch,
         notes: clearNotes ? null : notes ?? this.notes,
+        isActive: isActive ?? this.isActive,
         createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt ?? this.updatedAt,
       );
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
-        if (address != null) 'address': address,
+        if (branch != null) 'branch': branch,
         if (notes != null) 'notes': notes,
+        'isActive': isActive,
         'createdAt': createdAt.toIso8601String(),
+        'updatedAt': updatedAt.toIso8601String(),
       };
 
   factory Store.fromJson(Map<String, dynamic> json) => Store(
         id: json['id'] as String? ?? '',
         name: json['name'] as String? ?? '',
-        address: json['address'] as String?,
+        branch: json['branch'] as String? ?? json['address'] as String?,
         notes: json['notes'] as String?,
+        isActive: json['isActive'] as bool? ?? true,
         createdAt: _dateFromJson(json['createdAt']),
+        updatedAt: _nullableDateFromJson(json['updatedAt']) ??
+            _dateFromJson(json['createdAt']),
       );
 }
 
@@ -213,17 +235,27 @@ class PurchaseTotals {
 }
 
 class PurchaseListEntry {
-  const PurchaseListEntry({required this.purchase, required this.itemCount});
+  const PurchaseListEntry({
+    required this.purchase,
+    required this.itemCount,
+    required this.storeName,
+  });
 
   final Purchase purchase;
   final int itemCount;
+  final String storeName;
 }
 
 class PurchaseDetails {
-  const PurchaseDetails({required this.purchase, required this.items});
+  const PurchaseDetails({
+    required this.purchase,
+    required this.items,
+    required this.storeName,
+  });
 
   final Purchase purchase;
   final List<PurchaseItem> items;
+  final String storeName;
 }
 
 class PurchaseProductOption {

@@ -178,7 +178,10 @@ class _PurchaseDetailsScreenState extends State<PurchaseDetailsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        _PurchaseInformationCard(purchase: details.purchase),
+        _PurchaseInformationCard(
+          purchase: details.purchase,
+          storeName: details.storeName,
+        ),
         const SizedBox(height: 14),
         Text(
           'المنتجات (${details.items.length})',
@@ -199,9 +202,13 @@ class _PurchaseDetailsScreenState extends State<PurchaseDetailsScreen> {
 }
 
 class _PurchaseInformationCard extends StatelessWidget {
-  const _PurchaseInformationCard({required this.purchase});
+  const _PurchaseInformationCard({
+    required this.purchase,
+    required this.storeName,
+  });
 
   final Purchase purchase;
+  final String storeName;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -209,7 +216,7 @@ class _PurchaseInformationCard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              _DetailRow(label: 'المتجر', value: purchase.storeId),
+              _DetailRow(label: 'المتجر', value: storeName),
               _DetailRow(
                 label: 'تاريخ الشراء',
                 value: _formatDate(purchase.purchaseDate),

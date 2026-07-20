@@ -2,13 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../models/purchase_models.dart';
 import '../services/purchase_service.dart';
+import '../services/store_service.dart';
 import 'purchase_details_screen.dart';
 import 'purchase_form_screen.dart';
+import 'store_management_screen.dart';
 
 class PurchaseListScreen extends StatefulWidget {
-  const PurchaseListScreen({super.key, required this.service});
+  const PurchaseListScreen({
+    super.key,
+    required this.service,
+    this.storeService,
+  });
 
   final PurchaseService service;
+  final StoreService? storeService;
 
   @override
   State<PurchaseListScreen> createState() => _PurchaseListScreenState();
@@ -17,7 +24,7 @@ class PurchaseListScreen extends StatefulWidget {
 class _PurchaseListScreenState extends State<PurchaseListScreen> {
   final _searchController = TextEditingController();
   List<PurchaseListEntry> _entries = const [];
-  List<String> _stores = const [];
+  List<Store> _stores = const [];
   String? _storeId;
   DateTime? _date;
   DateTimeRange? _range;
@@ -29,7 +36,7 @@ class _PurchaseListScreenState extends State<PurchaseListScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_reloadWithoutSpinner);
-    _load();
+    _initialize();
   }
 
   @override
@@ -42,11 +49,24 @@ class _PurchaseListScreenState extends State<PurchaseListScreen> {
 
   void _reloadWithoutSpinner() => _load(showSpinner: false);
 
+  Future<void> _initialize() async {
+    try {
+      await widget.storeService?.initialize();
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
+  }
+
   Future<void> _load({bool showSpinner = true}) async {
     final version = ++_loadVersion;
     if (showSpinner && mounted) setState(() => _loading = true);
     try {
-      final stores = await widget.service.readStoreIds();
+      final stores = await widget.service.purchaseHistoryStores();
       final entries = await widget.service.searchPurchases(
         query: _searchController.text,
         storeId: _storeId,
@@ -113,6 +133,21 @@ class _PurchaseListScreenState extends State<PurchaseListScreen> {
     if (changed == true && mounted) await _load();
   }
 
+  Future<void> _openStores() async {
+    final service = widget.storeService;
+    if (service == null) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: StoreManagementScreen(service: service),
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
   Future<void> _openDetails(Purchase purchase) async {
     final changed = await Navigator.push<bool>(
       context,
@@ -140,7 +175,18 @@ class _PurchaseListScreenState extends State<PurchaseListScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
         key: const ValueKey('purchase-list-screen'),
-        appBar: AppBar(title: const Text('سجل المشتريات')),
+        appBar: AppBar(
+          title: const Text('سجل المشتريات'),
+          actions: [
+            if (widget.storeService != null)
+              IconButton(
+                key: const ValueKey('open-store-management'),
+                tooltip: 'إدارة المتاجر',
+                onPressed: _openStores,
+                icon: const Icon(Icons.storefront_outlined),
+              ),
+          ],
+        ),
         floatingActionButton: FloatingActionButton.extended(
           key: const ValueKey('create-purchase'),
           onPressed: _openCreate,
@@ -197,7 +243,7 @@ class _PurchaseListScreenState extends State<PurchaseListScreen> {
                 child: Icon(Icons.receipt_long_outlined),
               ),
               title: Text(
-                purchase.storeId,
+                entry.storeName,
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
               subtitle: Text(
@@ -230,7 +276,7 @@ class _PurchaseFilters extends StatelessWidget {
   });
 
   final TextEditingController searchController;
-  final List<String> stores;
+  final List<Store> stores;
   final String? storeId;
   final DateTime? date;
   final DateTimeRange? range;
@@ -267,8 +313,12 @@ class _PurchaseFilters extends StatelessWidget {
                   const DropdownMenuItem(
                       value: null, child: Text('كل المتاجر')),
                   ...stores.map(
-                    (store) =>
-                        DropdownMenuItem(value: store, child: Text(store)),
+                    (store) => DropdownMenuItem(
+                      value: store.id,
+                      child: Text(
+                        store.isActive ? store.name : '${store.name} (مؤرشف)',
+                      ),
+                    ),
                   ),
                 ],
                 onChanged: onStoreChanged,

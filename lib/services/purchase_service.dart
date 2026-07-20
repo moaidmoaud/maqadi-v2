@@ -4,6 +4,7 @@ import '../repositories/purchase_repository.dart';
 import '../utils/arabic_text.dart';
 import 'inventory_service.dart';
 import 'price_history_service.dart';
+import 'store_service.dart';
 
 typedef PurchaseClock = DateTime Function();
 typedef InventoryChangePersister = Future<void> Function();
@@ -13,17 +14,20 @@ class PurchaseService {
     required PurchaseRepository repository,
     required InventoryService inventoryService,
     PriceHistoryService? priceHistoryService,
+    StoreService? storeService,
     PurchaseClock? clock,
     InventoryChangePersister? persistInventory,
   })  : _repository = repository,
         _inventory = inventoryService,
         _priceHistory = priceHistoryService,
+        _storeService = storeService,
         _clock = clock ?? DateTime.now,
         _persistInventory = persistInventory;
 
   final PurchaseRepository _repository;
   final InventoryService _inventory;
   final PriceHistoryService? _priceHistory;
+  final StoreService? _storeService;
   final PurchaseClock _clock;
   final InventoryChangePersister? _persistInventory;
   int _idCounter = 0;
@@ -124,6 +128,8 @@ class PurchaseService {
     double? taxAmount,
     String? notes,
   }) async {
+    final resolvedStoreId =
+        (await _storeService?.storeForNewPurchase(storeId))?.id ?? storeId;
     final now = _clock();
     final usesAmounts = discountAmount != null || taxAmount != null;
     final normalizedItems = usesAmounts
@@ -137,7 +143,7 @@ class PurchaseService {
     final purchase = usesAmounts
         ? _buildPurchaseWithAmounts(
             id: id,
-            storeId: storeId,
+            storeId: resolvedStoreId,
             purchaseDate: purchaseDate,
             items: normalizedItems,
             discount: discountAmount ?? 0,
@@ -148,7 +154,7 @@ class PurchaseService {
           )
         : _buildPurchase(
             id: id,
-            storeId: storeId,
+            storeId: resolvedStoreId,
             purchaseDate: purchaseDate,
             items: normalizedItems,
             taxRate: taxRate,
@@ -211,6 +217,12 @@ class PurchaseService {
     if (existing == null) {
       throw StateError('Purchase ${purchase.id} does not exist.');
     }
+    final resolvedStoreId = (await _storeService?.storeForPurchaseEdit(
+          purchase.storeId,
+          previousStoreId: existing.storeId,
+        ))
+            ?.id ??
+        purchase.storeId;
     final existingItems = await _repository.readPurchaseDetails(purchase.id);
     final usesAmounts = discountAmount != null || taxAmount != null;
     final normalizedItems = usesAmounts
@@ -224,7 +236,7 @@ class PurchaseService {
     final updated = usesAmounts
         ? _buildPurchaseWithAmounts(
             id: purchase.id,
-            storeId: purchase.storeId,
+            storeId: resolvedStoreId,
             purchaseDate: purchase.purchaseDate,
             items: normalizedItems,
             discount: discountAmount ?? 0,
@@ -235,7 +247,7 @@ class PurchaseService {
           )
         : _buildPurchase(
             id: purchase.id,
-            storeId: purchase.storeId,
+            storeId: resolvedStoreId,
             purchaseDate: purchase.purchaseDate,
             items: normalizedItems,
             taxRate: taxRate,
@@ -337,6 +349,11 @@ class PurchaseService {
   }
 
   Future<List<String>> readStoreIds() async {
+    if (_storeService case final storeService?) {
+      return (await storeService.activeStores())
+          .map((store) => store.id)
+          .toList(growable: false);
+    }
     final purchases = await _repository.readPurchaseHistory();
     final stores = purchases
         .map((purchase) => purchase.storeId.trim())
@@ -345,6 +362,40 @@ class PurchaseService {
         .toList()
       ..sort((a, b) => a.compareTo(b));
     return stores;
+  }
+
+  Future<List<Store>> availableStoresForPurchase({
+    String? currentStoreId,
+  }) async {
+    if (_storeService case final storeService?) {
+      final stores = (await storeService.activeStores()).toList();
+      final currentId = currentStoreId?.trim();
+      if (currentId != null &&
+          currentId.isNotEmpty &&
+          !stores.any((store) => store.id == currentId)) {
+        final current = await storeService.readStore(currentId);
+        if (current != null) stores.add(current);
+      }
+      stores.sort((a, b) => a.name.compareTo(b.name));
+      return List.unmodifiable(stores);
+    }
+    final timestamp = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+    return (await readStoreIds())
+        .map(
+          (storeId) => Store(
+            id: storeId,
+            name: storeId,
+            createdAt: timestamp,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<Store>> purchaseHistoryStores() async {
+    if (_storeService case final storeService?) {
+      return storeService.searchStores(filter: StoreStatusFilter.all);
+    }
+    return availableStoresForPurchase();
   }
 
   Future<List<PurchaseListEntry>> searchPurchases({
@@ -381,12 +432,22 @@ class PurchaseService {
         continue;
       }
       final items = await _repository.readPurchaseDetails(purchase.id);
+      final storeName = await _displayStoreName(purchase.storeId);
       if (normalizedQuery.isNotEmpty &&
-          !_purchaseMatches(purchase, items, normalizedQuery)) {
+          !_purchaseMatches(
+            purchase,
+            items,
+            normalizedQuery,
+            storeName: storeName,
+          )) {
         continue;
       }
       entries.add(
-        PurchaseListEntry(purchase: purchase, itemCount: items.length),
+        PurchaseListEntry(
+          purchase: purchase,
+          itemCount: items.length,
+          storeName: storeName,
+        ),
       );
     }
     entries.sort(
@@ -400,6 +461,7 @@ class PurchaseService {
     if (purchase == null) return null;
     return PurchaseDetails(
       purchase: purchase,
+      storeName: await _displayStoreName(purchase.storeId),
       items: List.unmodifiable(
         await _repository.readPurchaseDetails(purchaseId),
       ),
@@ -493,11 +555,13 @@ class PurchaseService {
   bool _purchaseMatches(
     Purchase purchase,
     Iterable<PurchaseItem> items,
-    String normalizedQuery,
-  ) {
+    String normalizedQuery, {
+    String? storeName,
+  }) {
     final values = <String>[
       purchase.id,
       purchase.storeId,
+      storeName ?? '',
       purchase.notes ?? '',
       for (final item in items) ...[
         item.productId,
@@ -509,6 +573,9 @@ class PurchaseService {
       (value) => normalizeArabic(value).contains(normalizedQuery),
     );
   }
+
+  Future<String> _displayStoreName(String storeId) async =>
+      await _storeService?.displayName(storeId) ?? storeId;
 
   Purchase _buildPurchaseWithAmounts({
     required String id,
