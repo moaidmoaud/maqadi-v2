@@ -15,7 +15,9 @@ import 'screens/batch_management_screen.dart';
 import 'screens/barcode_scanner_screen.dart';
 import 'screens/expiry_list_screen.dart';
 import 'screens/purchase_list_screen.dart';
+import 'screens/receipt_capture_screen.dart';
 import 'screens/reports_screen.dart';
+import 'services/receipt_capture_service.dart';
 import 'utils/arabic_text.dart';
 import 'widgets/dashboard_analytics_panel.dart';
 import 'widgets/notification_settings_card.dart';
@@ -332,6 +334,22 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
 
+  void _openReceiptCapture() {
+    final service = createPlatformReceiptCaptureService();
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: ReceiptCaptureScreen(
+            service: service,
+            disposeService: true,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final last = widget.store.lastList;
@@ -346,6 +364,12 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('open-receipt-capture'),
+            tooltip: 'التقاط إيصال',
+            onPressed: _openReceiptCapture,
+            icon: const Icon(Icons.document_scanner_outlined),
+          ),
           IconButton(
             key: const ValueKey('open-purchases'),
             tooltip: 'سجل المشتريات',
