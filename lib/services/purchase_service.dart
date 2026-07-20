@@ -3,6 +3,7 @@ import '../models/purchase_models.dart';
 import '../repositories/purchase_repository.dart';
 import '../utils/arabic_text.dart';
 import 'inventory_service.dart';
+import 'price_history_service.dart';
 
 typedef PurchaseClock = DateTime Function();
 typedef InventoryChangePersister = Future<void> Function();
@@ -11,15 +12,18 @@ class PurchaseService {
   PurchaseService({
     required PurchaseRepository repository,
     required InventoryService inventoryService,
+    PriceHistoryService? priceHistoryService,
     PurchaseClock? clock,
     InventoryChangePersister? persistInventory,
   })  : _repository = repository,
         _inventory = inventoryService,
+        _priceHistory = priceHistoryService,
         _clock = clock ?? DateTime.now,
         _persistInventory = persistInventory;
 
   final PurchaseRepository _repository;
   final InventoryService _inventory;
+  final PriceHistoryService? _priceHistory;
   final PurchaseClock _clock;
   final InventoryChangePersister? _persistInventory;
   int _idCounter = 0;
@@ -175,10 +179,18 @@ class PurchaseService {
       }
       await _repository.createPurchase(purchase, persistedItems);
       repositoryCreated = true;
+      await _priceHistory?.recordPurchase(purchase, persistedItems);
       await _persistInventory?.call();
       return purchase;
     } catch (_) {
-      if (repositoryCreated) await _repository.deletePurchase(purchase.id);
+      if (repositoryCreated) {
+        try {
+          await _priceHistory?.removePurchaseHistory(purchase.id);
+        } catch (_) {
+          // Preserve the original operation failure during best-effort rollback.
+        }
+        await _repository.deletePurchase(purchase.id);
+      }
       for (final added in addedBatches.reversed) {
         if (added.item.batches.contains(added.batch)) {
           _inventory.deleteBatch(added.item, added.batch);
@@ -234,29 +246,72 @@ class PurchaseService {
     validatePurchase(updated, normalizedItems);
     _validateInventoryTargets(normalizedItems, replacing: existingItems);
 
-    final persistedItems = _reconcileInventory(
-      existingItems,
-      updated,
-      normalizedItems,
-    );
-    await _repository.updatePurchase(updated, persistedItems);
-    await _persistInventory?.call();
-    return updated;
+    final historySnapshot =
+        await _priceHistory?.snapshotForPurchase(purchase.id);
+    var repositoryUpdated = false;
+    try {
+      await _priceHistory?.reconcilePurchase(
+        previousPurchase: existing,
+        previousItems: existingItems,
+        updatedPurchase: updated,
+        updatedItems: normalizedItems,
+      );
+      final persistedItems = _reconcileInventory(
+        existingItems,
+        updated,
+        normalizedItems,
+      );
+      await _repository.updatePurchase(updated, persistedItems);
+      repositoryUpdated = true;
+      await _persistInventory?.call();
+      return updated;
+    } catch (_) {
+      if (!repositoryUpdated && historySnapshot != null) {
+        try {
+          await _priceHistory?.restorePurchaseSnapshot(
+            purchase.id,
+            historySnapshot,
+          );
+        } catch (_) {
+          // Preserve the original operation failure during best-effort rollback.
+        }
+      }
+      rethrow;
+    }
   }
 
   Future<void> deletePurchase(String purchaseId) async {
     final purchase = await _repository.readPurchase(purchaseId);
     if (purchase == null) return;
     final items = await _repository.readPurchaseDetails(purchaseId);
-    for (final item in items) {
-      final pantryItem = _inventory.findById(item.productId);
-      final batchId = item.batchId;
-      if (pantryItem == null || batchId == null) continue;
-      final batch = _inventory.findBatchById(pantryItem, batchId);
-      if (batch != null) _inventory.deleteBatch(pantryItem, batch);
+    final historySnapshot =
+        await _priceHistory?.snapshotForPurchase(purchaseId);
+    var repositoryDeleted = false;
+    try {
+      await _priceHistory?.removePurchaseHistory(purchaseId);
+      for (final item in items) {
+        final pantryItem = _inventory.findById(item.productId);
+        final batchId = item.batchId;
+        if (pantryItem == null || batchId == null) continue;
+        final batch = _inventory.findBatchById(pantryItem, batchId);
+        if (batch != null) _inventory.deleteBatch(pantryItem, batch);
+      }
+      await _repository.deletePurchase(purchaseId);
+      repositoryDeleted = true;
+      await _persistInventory?.call();
+    } catch (_) {
+      if (!repositoryDeleted && historySnapshot != null) {
+        try {
+          await _priceHistory?.restorePurchaseSnapshot(
+            purchaseId,
+            historySnapshot,
+          );
+        } catch (_) {
+          // Preserve the original operation failure during best-effort rollback.
+        }
+      }
+      rethrow;
     }
-    await _repository.deletePurchase(purchaseId);
-    await _persistInventory?.call();
   }
 
   Future<void> deletePurchaseSafely(String purchaseId) async {

@@ -6,6 +6,7 @@ import '../models/expiry_models.dart';
 import '../models/inventory_models.dart';
 import '../models/stock_models.dart';
 import '../screens/barcode_scanner_screen.dart';
+import '../screens/product_price_history_screen.dart';
 import '../widgets/expiry_status_badge.dart';
 import '../widgets/qr_code_dialog.dart';
 import '../widgets/stock_status_badge.dart';
@@ -29,6 +30,22 @@ class BatchManagementScreen extends StatefulWidget {
 }
 
 class _BatchManagementScreenState extends State<BatchManagementScreen> {
+  void _openPriceHistory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: ProductPriceHistoryScreen(
+            service: widget.store.priceHistoryService,
+            productId: widget.item.id,
+            productName: widget.item.name,
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _scanNewBarcode() async {
     final barcode = await Navigator.push<String>(
       context,
@@ -165,6 +182,14 @@ class _BatchManagementScreenState extends State<BatchManagementScreen> {
           'دفعات ${widget.item.name}',
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
+        actions: [
+          IconButton(
+            key: const ValueKey('open-product-price-history'),
+            tooltip: 'سجل الأسعار',
+            onPressed: _openPriceHistory,
+            icon: const Icon(Icons.price_change_outlined),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showBatchEditor,
