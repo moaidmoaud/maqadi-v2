@@ -11,7 +11,8 @@ import 'package:maqadi_v2/services/inventory_service.dart';
 import 'package:maqadi_v2/services/price_history_service.dart';
 
 void main() {
-  testWidgets('timeline shows loading then prices newest first', (tester) async {
+  testWidgets('timeline shows loading then prices newest first',
+      (tester) async {
     final repository = _MemoryPriceHistoryRepository();
     final service = PriceHistoryService(
       repository: repository,
@@ -54,7 +55,8 @@ void main() {
     expect(find.text('لا يوجد سجل أسعار لهذا المنتج بعد.'), findsOneWidget);
   });
 
-  testWidgets('timeline shows repository errors and retry action', (tester) async {
+  testWidgets('timeline shows repository errors and retry action',
+      (tester) async {
     final service = PriceHistoryService(
       repository: _MemoryPriceHistoryRepository(readError: true),
     );
@@ -69,6 +71,8 @@ void main() {
 
   testWidgets('product screen opens its service-backed price timeline',
       (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final item = PantryItem(
       id: 'rice',
       name: 'Rice',

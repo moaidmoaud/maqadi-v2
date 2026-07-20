@@ -49,8 +49,7 @@ class PriceHistoryRecord {
 
 double _doubleFromJson(Object? value) => value is num ? value.toDouble() : 0;
 
-DateTime _dateFromJson(Object? value) =>
-    value is String
-        ? DateTime.tryParse(value) ??
-            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true)
-        : DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+DateTime _dateFromJson(Object? value) => value is String
+    ? DateTime.tryParse(value) ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true)
+    : DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);

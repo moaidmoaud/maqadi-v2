@@ -20,8 +20,7 @@ class ProductPriceHistoryScreen extends StatefulWidget {
       _ProductPriceHistoryScreenState();
 }
 
-class _ProductPriceHistoryScreenState
-    extends State<ProductPriceHistoryScreen> {
+class _ProductPriceHistoryScreenState extends State<ProductPriceHistoryScreen> {
   List<PriceHistoryRecord> _records = const [];
   Object? _error;
   bool _loading = true;
@@ -35,8 +34,7 @@ class _ProductPriceHistoryScreenState
   Future<void> _load() async {
     if (mounted) setState(() => _loading = true);
     try {
-      final records =
-          await widget.service.historyForProduct(widget.productId);
+      final records = await widget.service.historyForProduct(widget.productId);
       if (!mounted) return;
       setState(() {
         _records = records;

@@ -21,9 +21,8 @@ class PriceHistoryService {
     Purchase purchase,
     Iterable<PurchaseItem> items,
   ) async {
-    final records = items
-        .map((item) => _recordFor(purchase, item))
-        .toList(growable: false);
+    final records =
+        items.map((item) => _recordFor(purchase, item)).toList(growable: false);
     if (records.isEmpty) return const [];
     await _repository.applyChanges(added: records);
     return List.unmodifiable(records);

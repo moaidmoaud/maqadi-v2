@@ -78,7 +78,8 @@ void main() {
     expect((await repository.readByProduct('rice')).single.id, 'rice-price');
     expect((await repository.readByProduct('milk')).single.id, 'milk-price-2');
     await repository.replacePurchaseRecords('purchase-1', [rice]);
-    expect((await repository.readByPurchase('purchase-1')).single.id, 'rice-price');
+    expect((await repository.readByPurchase('purchase-1')).single.id,
+        'rice-price');
     expect(await repository.readByProduct('milk'), isEmpty);
   });
 }

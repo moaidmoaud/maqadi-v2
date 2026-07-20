@@ -189,14 +189,16 @@ void main() {
     );
     expect(rice.quantity, 2);
     expect((await purchases.readPurchase(created.id))!.subtotal, 10);
-    expect((await priceHistory.historyForProduct(rice.id)).single.id, original.id);
+    expect(
+        (await priceHistory.historyForProduct(rice.id)).single.id, original.id);
 
     inventory.consume(rice, 1);
     await expectLater(
       purchases.deletePurchaseSafely(created.id),
       throwsA(isA<PurchaseDeletionException>()),
     );
-    expect((await priceHistory.historyForProduct(rice.id)).single.id, original.id);
+    expect(
+        (await priceHistory.historyForProduct(rice.id)).single.id, original.id);
   });
 }
 

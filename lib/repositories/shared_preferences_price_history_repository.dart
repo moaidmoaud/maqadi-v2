@@ -11,8 +11,7 @@ class SharedPreferencesPriceHistoryRepository
     implements PriceHistoryRepository {
   SharedPreferencesPriceHistoryRepository({
     PriceHistoryPreferencesLoader? preferencesLoader,
-  }) : _preferencesLoader =
-            preferencesLoader ?? SharedPreferences.getInstance;
+  }) : _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
 
   static const dataKey = 'maqadi_price_history_data_v53';
   static const schemaVersion = 1;
