@@ -12,10 +12,12 @@ class ReceiptOcrScreen extends StatefulWidget {
     super.key,
     required this.service,
     required this.request,
+    this.onContinue,
   });
 
   final ReceiptOcrService service;
   final ReceiptOcrRequest request;
+  final ValueChanged<ReceiptOcrResult>? onContinue;
 
   @override
   State<ReceiptOcrScreen> createState() => _ReceiptOcrScreenState();
@@ -60,7 +62,10 @@ class _ReceiptOcrScreenState extends State<ReceiptOcrScreen> {
         body: SafeArea(
           child: switch (_status) {
             ReceiptOcrViewStatus.loading => const _OcrLoadingView(),
-            ReceiptOcrViewStatus.success => _OcrResultView(result: _result!),
+            ReceiptOcrViewStatus.success => _OcrResultView(
+                result: _result!,
+                onContinue: widget.onContinue,
+              ),
             ReceiptOcrViewStatus.error => _OcrErrorView(
                 message: _errorMessage!,
                 onRetry: _recognize,
@@ -87,9 +92,10 @@ class _OcrLoadingView extends StatelessWidget {
 }
 
 class _OcrResultView extends StatelessWidget {
-  const _OcrResultView({required this.result});
+  const _OcrResultView({required this.result, this.onContinue});
 
   final ReceiptOcrResult result;
+  final ValueChanged<ReceiptOcrResult>? onContinue;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -107,6 +113,15 @@ class _OcrResultView extends StatelessWidget {
             result.text,
             key: const ValueKey('receipt-ocr-result-text'),
           ),
+          if (onContinue != null) ...[
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              key: const ValueKey('open-product-matching'),
+              onPressed: () => onContinue!(result),
+              icon: const Icon(Icons.manage_search),
+              label: const Text('مطابقة المنتجات'),
+            ),
+          ],
           const SizedBox(height: 16),
           for (var index = 0; index < result.blocks.length; index++)
             _OcrBlockCard(

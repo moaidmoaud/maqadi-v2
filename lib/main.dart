@@ -11,6 +11,9 @@ import 'models/inventory_models.dart';
 import 'models/shopping_models.dart';
 import 'models/stock_models.dart';
 import 'products.dart';
+import 'product_matching/domain/product_match_models.dart';
+import 'product_matching/presentation/product_matching_screen.dart';
+import 'product_matching/product_matching_factory.dart';
 import 'receipt_ocr/application/receipt_ocr_service.dart';
 import 'receipt_ocr/domain/receipt_ocr_request.dart';
 import 'receipt_ocr/infrastructure/ml_kit/ml_kit_receipt_ocr_provider.dart';
@@ -359,6 +362,22 @@ class _HomeScreenState extends State<HomeScreen> {
                         provider: const MlKitReceiptOcrProvider(),
                       ),
                       request: ReceiptOcrRequest(image: image),
+                      onContinue: (ocrResult) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => Directionality(
+                              textDirection: TextDirection.rtl,
+                              child: ProductMatchingScreen(
+                                service: createProductMatchingService(),
+                                request: ProductMatchRequest(
+                                  ocrResult: ocrResult,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
