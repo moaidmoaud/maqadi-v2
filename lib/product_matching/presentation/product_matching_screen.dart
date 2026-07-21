@@ -12,11 +12,13 @@ class ProductMatchingScreen extends StatefulWidget {
     required this.service,
     required this.request,
     this.onSelected,
+    this.onContinue,
   });
 
   final ProductMatchingService service;
   final ProductMatchRequest request;
   final ValueChanged<MatchedProduct>? onSelected;
+  final ValueChanged<ProductMatchResult>? onContinue;
 
   @override
   State<ProductMatchingScreen> createState() => _ProductMatchingScreenState();
@@ -114,6 +116,22 @@ class _ProductMatchingScreenState extends State<ProductMatchingScreen> {
             ],
           ),
         ),
+        bottomNavigationBar: widget.onContinue != null &&
+                (_status == ProductMatchingViewStatus.candidates ||
+                    _status == ProductMatchingViewStatus.noMatches)
+            ? SafeArea(
+                minimum: const EdgeInsets.all(16),
+                child: FilledButton.icon(
+                  key: const ValueKey('continue-receipt-import'),
+                  onPressed: () => widget.onContinue!(
+                    _result ??
+                        widget.service.resultWithoutCandidates(_activeRequest),
+                  ),
+                  icon: const Icon(Icons.receipt_long),
+                  label: const Text('مراجعة الإيصال'),
+                ),
+              )
+            : null,
       );
 
   Widget _buildState() => switch (_status) {

@@ -1,5 +1,7 @@
 import '../models/inventory_models.dart';
 import '../models/purchase_models.dart';
+import '../receipt_import/application/receipt_purchase_gateway.dart';
+import '../receipt_import/domain/receipt_draft.dart';
 import '../repositories/purchase_repository.dart';
 import '../utils/arabic_text.dart';
 import 'inventory_service.dart';
@@ -9,7 +11,7 @@ import 'store_service.dart';
 typedef PurchaseClock = DateTime Function();
 typedef InventoryChangePersister = Future<void> Function();
 
-class PurchaseService {
+class PurchaseService implements ReceiptPurchaseGateway {
   PurchaseService({
     required PurchaseRepository repository,
     required InventoryService inventoryService,
@@ -48,6 +50,89 @@ class PurchaseService {
       _inventory.findById(productId)?.name ?? productId;
 
   String newPurchaseId() => _newId('purchase');
+
+  @override
+  List<ReceiptDraftProductOption> receiptImportProducts() => availableProducts()
+      .map(
+        (product) => ReceiptDraftProductOption(
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          unit: product.unit,
+        ),
+      )
+      .toList(growable: false);
+
+  @override
+  Future<List<ReceiptDraftStoreOption>> receiptImportStores() async =>
+      (await availableStoresForPurchase())
+          .where((store) => store.isActive)
+          .map(
+            (store) => ReceiptDraftStoreOption(
+              id: store.id,
+              name: store.name,
+            ),
+          )
+          .toList(growable: false);
+
+  @override
+  Future<ReceiptImportConfirmation> createPurchaseFromReceiptDraft(
+    ReceiptDraft draft,
+  ) async {
+    try {
+      final purchaseId = newPurchaseId();
+      final purchase = await createPurchase(
+        id: purchaseId,
+        storeId: draft.metadata.storeId ?? '',
+        purchaseDate: draft.metadata.purchaseDate,
+        items: [
+          for (final draftItem in draft.items)
+            PurchaseItem(
+              id: _newId('purchase-item'),
+              purchaseId: purchaseId,
+              productId: draftItem.productId ?? '',
+              quantity: draftItem.quantity,
+              unitPrice: draftItem.unitPrice,
+              finalUnitPrice: draftItem.unitPrice,
+              lineTotal: draftItem.lineTotal,
+              expiryDate: draftItem.expiryDate,
+            ),
+        ],
+        discountAmount: draft.discount,
+        taxAmount: draft.tax,
+        notes: draft.metadata.notes,
+      );
+      return ReceiptImportConfirmation(
+        purchaseId: purchase.id,
+        total: purchase.total,
+        purchaseDate: purchase.purchaseDate,
+      );
+    } on PurchaseValidationException catch (error) {
+      throw ReceiptPurchaseGatewayException(
+        ReceiptPurchaseGatewayErrorCode.validation,
+        error.message,
+        cause: error,
+      );
+    } on StoreValidationException catch (error) {
+      throw ReceiptPurchaseGatewayException(
+        ReceiptPurchaseGatewayErrorCode.validation,
+        error.message,
+        cause: error,
+      );
+    } on ArgumentError catch (error) {
+      throw ReceiptPurchaseGatewayException(
+        ReceiptPurchaseGatewayErrorCode.validation,
+        'بيانات الإيصال غير صالحة لإنشاء عملية شراء.',
+        cause: error,
+      );
+    } catch (error) {
+      throw ReceiptPurchaseGatewayException(
+        ReceiptPurchaseGatewayErrorCode.creation,
+        'تعذر حفظ عملية الشراء من الإيصال.',
+        cause: error,
+      );
+    }
+  }
 
   PurchaseItem createDraftItem(String productId, {String purchaseId = ''}) {
     if (_inventory.findById(productId) == null) {

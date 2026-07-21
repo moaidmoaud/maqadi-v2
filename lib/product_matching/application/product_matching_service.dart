@@ -12,6 +12,13 @@ class ProductMatchingService {
   List<String> sourceLines(ProductMatchRequest request) =>
       _engine.sourceTexts(request, includeExcluded: true);
 
+  ProductMatchResult resultWithoutCandidates(ProductMatchRequest request) =>
+      ProductMatchResult(
+        matches: const [],
+        generatedCandidateCount: 0,
+        evaluatedSourceCount: _engine.sourceTexts(request).length,
+      );
+
   Future<ProductMatchResult> match(ProductMatchRequest request) async {
     _validateSettings(request);
     if (request.ocrResult.text.trim().isEmpty &&

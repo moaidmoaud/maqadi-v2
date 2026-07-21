@@ -18,6 +18,8 @@ import 'receipt_ocr/application/receipt_ocr_service.dart';
 import 'receipt_ocr/domain/receipt_ocr_request.dart';
 import 'receipt_ocr/infrastructure/ml_kit/ml_kit_receipt_ocr_provider.dart';
 import 'receipt_ocr/presentation/receipt_ocr_screen.dart';
+import 'receipt_import/application/receipt_import_service.dart';
+import 'receipt_import/presentation/receipt_review_screen.dart';
 import 'screens/batch_management_screen.dart';
 import 'screens/barcode_scanner_screen.dart';
 import 'screens/expiry_list_screen.dart';
@@ -373,6 +375,24 @@ class _HomeScreenState extends State<HomeScreen> {
                                 request: ProductMatchRequest(
                                   ocrResult: ocrResult,
                                 ),
+                                onContinue: (matchResult) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => Directionality(
+                                        textDirection: TextDirection.rtl,
+                                        child: ReceiptReviewScreen(
+                                          service: ReceiptImportService(
+                                            purchaseGateway:
+                                                widget.store.purchaseService,
+                                          ),
+                                          ocrResult: ocrResult,
+                                          matchResult: matchResult,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ),

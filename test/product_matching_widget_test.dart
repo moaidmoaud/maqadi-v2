@@ -68,6 +68,26 @@ void main() {
         find.byKey(const ValueKey('product-match-candidates')), findsOneWidget);
   });
 
+  testWidgets('continues receipt review with an explicit empty result',
+      (tester) async {
+    ProductMatchResult? continued;
+    await _pumpScreen(
+      tester,
+      _WidgetRepository(_products),
+      ['receipt total'],
+      onContinue: (result) => continued = result,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('product-match-empty')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('continue-receipt-import')));
+    await tester.pump();
+
+    expect(continued, isNotNull);
+    expect(continued!.matches, isEmpty);
+    expect(continued!.evaluatedSourceCount, 1);
+  });
+
   testWidgets('shows an error and retries through the service', (tester) async {
     final repository = _WidgetRepository(_products)
       ..errors.add(const ProductMatchingRepositoryException('offline'));
@@ -109,6 +129,7 @@ Future<void> _pumpScreen(
   ProductMatchingRepository repository,
   List<String> lines, {
   ValueChanged<MatchedProduct>? onSelected,
+  ValueChanged<ProductMatchResult>? onContinue,
 }) async {
   await tester.binding.setSurfaceSize(const Size(900, 1100));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -122,6 +143,7 @@ Future<void> _pumpScreen(
           ),
           request: ProductMatchRequest(ocrResult: _ocrResult(lines)),
           onSelected: onSelected,
+          onContinue: onContinue,
         ),
       ),
     ),
