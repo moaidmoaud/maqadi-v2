@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_store.dart';
+import 'inventory_health/presentation/inventory_health_screen.dart';
 import 'models/barcode_models.dart';
 import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
@@ -749,6 +750,31 @@ class _PantryScreenState extends State<PantryScreen> {
   bool lowOnly = false;
   String? _pendingInitialBarcode;
 
+  Future<void> _openInventoryHealth() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => InventoryHealthScreen(
+          service: widget.store.inventoryHealthService,
+          onOpenProduct: (productId) async {
+            final item = widget.store.pantryItemById(productId);
+            if (item == null) return;
+            await Navigator.push<void>(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => BatchManagementScreen(
+                  store: widget.store,
+                  item: item,
+                  scannerBuilder: widget.scannerBuilder,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1080,6 +1106,12 @@ class _PantryScreenState extends State<PantryScreen> {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('open-inventory-health'),
+            tooltip: 'Inventory health',
+            onPressed: _openInventoryHealth,
+            icon: const Icon(Icons.monitor_heart_outlined),
+          ),
           IconButton(
             tooltip: 'إضافة الناقص للقائمة',
             onPressed: widget.store.lowStockItems.isEmpty &&

@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'inventory_health/application/inventory_health_service.dart';
+import 'inventory_health/engine/inventory_health_engine.dart';
+import 'inventory_health/infrastructure/inventory_service_health_reader.dart';
 import 'models/barcode_models.dart';
 import 'models/dashboard_analytics_models.dart';
 import 'models/expiry_models.dart';
@@ -39,6 +42,7 @@ class AppStore extends ChangeNotifier {
     StoreRepository? storeRepository,
     StoreService? storeService,
     InventoryService? inventoryService,
+    InventoryHealthService? inventoryHealthService,
     NotificationScheduler? notificationScheduler,
     ReportGenerator? reportGenerator,
     ReportDelivery? reportDelivery,
@@ -69,6 +73,11 @@ class AppStore extends ChangeNotifier {
           storeService: _storeService,
           persistInventory: _persistPurchaseInventory,
         );
+    _inventoryHealthService = inventoryHealthService ??
+        InventoryHealthService(
+          inputReader: InventoryServiceHealthReader(_inventory),
+          engine: const InventoryHealthEngine(),
+        );
   }
 
   final AppRepository _repository;
@@ -80,6 +89,7 @@ class AppStore extends ChangeNotifier {
   late final PriceHistoryService _priceHistoryService;
   late final PurchaseService _purchaseService;
   late final StoreService _storeService;
+  late final InventoryHealthService _inventoryHealthService;
   final List<ShoppingListModel> lists = [];
   final Set<String> favorites = {};
   final Map<String, int> frequency = {};
@@ -97,6 +107,8 @@ class AppStore extends ChangeNotifier {
   PriceHistoryService get priceHistoryService => _priceHistoryService;
   PurchaseService get purchaseService => _purchaseService;
   StoreService get storeService => _storeService;
+  InventoryHealthService get inventoryHealthService => _inventoryHealthService;
+  PantryItem? pantryItemById(String id) => _inventory.findById(id);
 
   Future<GeneratedReportFile> generatePdfReport(
     PdfReportType type, {

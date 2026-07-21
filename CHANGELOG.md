@@ -1,5 +1,17 @@
 # سجل التغييرات
 
+## Phase 7.0 — Inventory Health Engine
+
+### Inventory health
+- Added a read-only, deterministic health engine with exactly four states: `Unknown`, `Healthy`, `LowStock`, and `OutOfStock`.
+- Added structured explanations containing the status, reason code, quantity, threshold, unit, evaluation timestamp, and summary for every evaluated product.
+- Added a single-pass adapter over the already-loaded `InventoryService`, policy resolution, explicit failure mapping, and urgency-first result ordering without persistence or caching.
+- Added a read-only Inventory Health screen with loading, results, empty, error, refresh, filtering, explanations, and direct product navigation.
+
+### Architecture and quality
+- Documented RFC-001 and ADR-018 through ADR-020 in `docs/architecture/inventory-health.md`.
+- Added engine, service, presentation, architecture, deterministic, large-batch, and no-write tests.
+
 ## Phase 6.4 — تثبيت منصة الإيصالات
 
 ### الاعتمادية وسلامة البيانات
