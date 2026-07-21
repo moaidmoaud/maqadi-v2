@@ -39,6 +39,16 @@ class LowStockService {
 
     final healthEvaluation = upstream[0] as InventoryHealthEvaluation;
     final consumptionEvaluation = upstream[1] as ConsumptionEvaluation;
+    return evaluateFromResults(
+      healthEvaluation: healthEvaluation,
+      consumptionEvaluation: consumptionEvaluation,
+    );
+  }
+
+  LowStockEvaluation evaluateFromResults({
+    required InventoryHealthEvaluation healthEvaluation,
+    required ConsumptionEvaluation consumptionEvaluation,
+  }) {
     if (healthEvaluation
         case InventoryHealthEvaluationFailure(:final failure)) {
       return LowStockEvaluationFailure(

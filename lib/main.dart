@@ -13,6 +13,7 @@ import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
 import 'models/shopping_models.dart';
 import 'models/stock_models.dart';
+import 'shopping_recommendation/presentation/shopping_recommendation_screen.dart';
 import 'products.dart';
 import 'product_matching/domain/product_match_models.dart';
 import 'product_matching/presentation/product_matching_screen.dart';
@@ -813,6 +814,31 @@ class _PantryScreenState extends State<PantryScreen> {
     );
   }
 
+  Future<void> _openShoppingRecommendations() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => ShoppingRecommendationScreen(
+          service: widget.store.shoppingRecommendationService,
+          onOpenProduct: (productId) async {
+            final item = widget.store.pantryItemById(productId);
+            if (item == null) return;
+            await Navigator.push<void>(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => BatchManagementScreen(
+                  store: widget.store,
+                  item: item,
+                  scannerBuilder: widget.scannerBuilder,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1144,6 +1170,12 @@ class _PantryScreenState extends State<PantryScreen> {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('open-shopping-recommendations'),
+            tooltip: 'Shopping recommendations',
+            onPressed: _openShoppingRecommendations,
+            icon: const Icon(Icons.recommend_outlined),
+          ),
           IconButton(
             key: const ValueKey('open-low-stock-outlook'),
             tooltip: 'Low stock outlook',

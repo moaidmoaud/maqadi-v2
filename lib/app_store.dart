@@ -35,6 +35,8 @@ import 'services/purchase_service.dart';
 import 'services/report_delivery.dart';
 import 'services/report_service.dart';
 import 'services/store_service.dart';
+import 'shopping_recommendation/application/shopping_recommendation_service.dart';
+import 'shopping_recommendation/engine/shopping_recommendation_engine.dart';
 import 'utils/arabic_text.dart';
 
 class AppStore extends ChangeNotifier {
@@ -50,6 +52,7 @@ class AppStore extends ChangeNotifier {
     InventoryHealthService? inventoryHealthService,
     ConsumptionService? consumptionService,
     LowStockService? lowStockService,
+    ShoppingRecommendationService? shoppingRecommendationService,
     NotificationScheduler? notificationScheduler,
     ReportGenerator? reportGenerator,
     ReportDelivery? reportDelivery,
@@ -96,6 +99,13 @@ class AppStore extends ChangeNotifier {
           consumptionService: _consumptionService,
           engine: const LowStockEngine(),
         );
+    _shoppingRecommendationService = shoppingRecommendationService ??
+        ShoppingRecommendationService(
+          healthService: _inventoryHealthService,
+          consumptionService: _consumptionService,
+          lowStockService: _lowStockService,
+          engine: const ShoppingRecommendationEngine(),
+        );
   }
 
   final AppRepository _repository;
@@ -110,6 +120,7 @@ class AppStore extends ChangeNotifier {
   late final InventoryHealthService _inventoryHealthService;
   late final ConsumptionService _consumptionService;
   late final LowStockService _lowStockService;
+  late final ShoppingRecommendationService _shoppingRecommendationService;
   final List<ShoppingListModel> lists = [];
   final Set<String> favorites = {};
   final Map<String, int> frequency = {};
@@ -130,6 +141,8 @@ class AppStore extends ChangeNotifier {
   InventoryHealthService get inventoryHealthService => _inventoryHealthService;
   ConsumptionService get consumptionService => _consumptionService;
   LowStockService get lowStockService => _lowStockService;
+  ShoppingRecommendationService get shoppingRecommendationService =>
+      _shoppingRecommendationService;
   PantryItem? pantryItemById(String id) => _inventory.findById(id);
 
   Future<GeneratedReportFile> generatePdfReport(

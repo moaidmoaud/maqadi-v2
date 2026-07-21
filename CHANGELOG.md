@@ -1,5 +1,19 @@
 # سجل التغييرات
 
+## Phase 7.3 — Shopping Recommendation Engine
+
+### Shopping recommendations
+- Added a deterministic, read-only Shopping Recommendation Engine with exactly four business decisions: `Ignore`, `Watch`, `BuySoon`, and `BuyNow`.
+- Added the approved RFC-004 mapping from authoritative Low Stock predictions and Health states, with six explicit reason codes and product-specific failures for unsupported or malformed combinations.
+- Added structured explanations containing the recommendation, reason, Health state, Consumption evidence, Low Stock prediction, immutable evidence, and summary.
+- Added a read-only Shopping Recommendations screen with loading, results, empty and error states, retry, refresh, four-state filtering, explanations, product failures, and direct product navigation.
+
+### Architecture and quality
+- Added backward-compatible Low Stock orchestration so Health and Consumption are each evaluated once and their existing Results are reused for one Low Stock evaluation and O(products) recommendation joining.
+- Kept Consumption evidence explanatory only; recommendation code performs no consumption-rate, projection, threshold, horizon, confidence, quantity, persistence, notification, or shopping-list calculations or mutations.
+- Documented RFC-004, ADR-028, and ADR-029 in `docs/architecture/shopping-recommendation-engine.md`.
+- Added 40 engine, service, presentation, architecture, deterministic, failure-mapping, large-batch, backward-compatibility, and no-write tests.
+
 ## Phase 7.2 — Low Stock Detection Engine
 
 ### Low-stock prediction
