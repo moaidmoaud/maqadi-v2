@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'app_store.dart';
 import 'consumption/presentation/consumption_screen.dart';
 import 'inventory_health/presentation/inventory_health_screen.dart';
+import 'low_stock/presentation/low_stock_screen.dart';
 import 'models/barcode_models.dart';
 import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
@@ -787,6 +788,31 @@ class _PantryScreenState extends State<PantryScreen> {
     );
   }
 
+  Future<void> _openLowStockOutlook() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => LowStockScreen(
+          service: widget.store.lowStockService,
+          onOpenProduct: (productId) async {
+            final item = widget.store.pantryItemById(productId);
+            if (item == null) return;
+            await Navigator.push<void>(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => BatchManagementScreen(
+                  store: widget.store,
+                  item: item,
+                  scannerBuilder: widget.scannerBuilder,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1118,6 +1144,12 @@ class _PantryScreenState extends State<PantryScreen> {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('open-low-stock-outlook'),
+            tooltip: 'Low stock outlook',
+            onPressed: _openLowStockOutlook,
+            icon: const Icon(Icons.trending_down_outlined),
+          ),
           IconButton(
             key: const ValueKey('open-consumption-history'),
             tooltip: 'Consumption history',

@@ -8,6 +8,8 @@ import 'consumption/infrastructure/inventory_service_consumption_reader.dart';
 import 'inventory_health/application/inventory_health_service.dart';
 import 'inventory_health/engine/inventory_health_engine.dart';
 import 'inventory_health/infrastructure/inventory_service_health_reader.dart';
+import 'low_stock/application/low_stock_service.dart';
+import 'low_stock/engine/low_stock_engine.dart';
 import 'models/barcode_models.dart';
 import 'models/dashboard_analytics_models.dart';
 import 'models/expiry_models.dart';
@@ -47,6 +49,7 @@ class AppStore extends ChangeNotifier {
     InventoryService? inventoryService,
     InventoryHealthService? inventoryHealthService,
     ConsumptionService? consumptionService,
+    LowStockService? lowStockService,
     NotificationScheduler? notificationScheduler,
     ReportGenerator? reportGenerator,
     ReportDelivery? reportDelivery,
@@ -87,6 +90,12 @@ class AppStore extends ChangeNotifier {
           inputReader: InventoryServiceConsumptionReader(_inventory),
           engine: const ConsumptionEngine(),
         );
+    _lowStockService = lowStockService ??
+        LowStockService(
+          healthService: _inventoryHealthService,
+          consumptionService: _consumptionService,
+          engine: const LowStockEngine(),
+        );
   }
 
   final AppRepository _repository;
@@ -100,6 +109,7 @@ class AppStore extends ChangeNotifier {
   late final StoreService _storeService;
   late final InventoryHealthService _inventoryHealthService;
   late final ConsumptionService _consumptionService;
+  late final LowStockService _lowStockService;
   final List<ShoppingListModel> lists = [];
   final Set<String> favorites = {};
   final Map<String, int> frequency = {};
@@ -119,6 +129,7 @@ class AppStore extends ChangeNotifier {
   StoreService get storeService => _storeService;
   InventoryHealthService get inventoryHealthService => _inventoryHealthService;
   ConsumptionService get consumptionService => _consumptionService;
+  LowStockService get lowStockService => _lowStockService;
   PantryItem? pantryItemById(String id) => _inventory.findById(id);
 
   Future<GeneratedReportFile> generatePdfReport(

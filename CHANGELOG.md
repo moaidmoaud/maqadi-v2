@@ -1,5 +1,17 @@
 # سجل التغييرات
 
+## Phase 7.2 — Low Stock Detection Engine
+
+### Low-stock prediction
+- Added a read-only, deterministic Low Stock Detection Engine that consumes only `InventoryHealthResult` and `ConsumptionResult` and returns `Normal`, `Monitor`, or `LowSoon`.
+- Added fixed fourteen-day projections with seven-day and two-consumption-event evidence minimums, explicit per-product and batch failures, and structured engine-generated explanations.
+- Added a read-only Low Stock Outlook screen with loading, results, empty and error states, refresh, prediction filtering, explanations, and direct product navigation.
+
+### Architecture and quality
+- Kept all predictions derived and non-persistent with one Health evaluation, one Consumption evaluation, O(products) joining, and no inventory, purchase, shopping, notification, or repository writes.
+- Documented RFC-003, ADR-026, and ADR-027 in `docs/architecture/low-stock-engine.md`.
+- Added 40 engine, service, presentation, architecture, deterministic, large-batch, failure-mapping, and no-write tests.
+
 ## Phase 7.1 — Consumption Engine
 
 ### Consumption history
