@@ -354,18 +354,19 @@ class _HomeScreenState extends State<HomeScreen> {
             service: service,
             disposeService: true,
             onReady: (image) {
-              Navigator.push(
+              Navigator.pushReplacement(
                 context,
                 MaterialPageRoute<void>(
                   builder: (_) => Directionality(
                     textDirection: TextDirection.rtl,
                     child: ReceiptOcrScreen(
                       service: ReceiptOcrService(
-                        provider: const MlKitReceiptOcrProvider(),
+                        provider: MlKitReceiptOcrProvider(),
                       ),
                       request: ReceiptOcrRequest(image: image),
+                      disposeService: true,
                       onContinue: (ocrResult) {
-                        Navigator.push(
+                        Navigator.pushReplacement(
                           context,
                           MaterialPageRoute<void>(
                             builder: (_) => Directionality(
@@ -376,7 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ocrResult: ocrResult,
                                 ),
                                 onContinue: (matchResult) {
-                                  Navigator.push(
+                                  Navigator.pushReplacement(
                                     context,
                                     MaterialPageRoute<void>(
                                       builder: (_) => Directionality(
@@ -388,6 +389,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           ),
                                           ocrResult: ocrResult,
                                           matchResult: matchResult,
+                                          terminateReceiptFlowOnConfirm: true,
                                         ),
                                       ),
                                     ),

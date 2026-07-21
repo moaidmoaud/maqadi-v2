@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +12,7 @@ void main() {
     late _FakeAcquirer acquirer;
     late _FakeCropper cropper;
     late ReceiptCaptureService service;
+    late bool serviceDisposed;
 
     setUp(() {
       acquirer = _FakeAcquirer();
@@ -20,9 +22,12 @@ void main() {
         imageCropper: cropper,
         clock: () => DateTime(2026, 7, 20, 12),
       );
+      serviceDisposed = false;
     });
 
-    tearDown(() => service.dispose());
+    tearDown(() {
+      if (!serviceDisposed) service.dispose();
+    });
 
     test('camera capture validates the image and selects it', () async {
       acquirer.cameraResult = _candidate(
@@ -149,6 +154,30 @@ void main() {
       expect(service.session.hasImage, isFalse);
       expect(service.session.currentImage, isNull);
     });
+
+    test('late acquisition is discarded after cancellation', () async {
+      acquirer.pendingResult = Completer<ReceiptImageCandidate?>();
+      final acquisition = service.selectFromGallery();
+
+      service.cancel();
+      acquirer.pendingResult!.complete(_candidate());
+      await acquisition;
+
+      expect(service.session.status, ReceiptSessionStatus.cancelled);
+      expect(service.session.hasImage, isFalse);
+    });
+
+    test('late acquisition is safely discarded after disposal', () async {
+      acquirer.pendingResult = Completer<ReceiptImageCandidate?>();
+      final acquisition = service.selectFromGallery();
+
+      service.dispose();
+      serviceDisposed = true;
+      acquirer.pendingResult!.complete(_candidate());
+      await acquisition;
+
+      expect(service.session.hasImage, isFalse);
+    });
   });
 }
 
@@ -169,12 +198,14 @@ class _FakeAcquirer implements ReceiptImageAcquirer {
   ReceiptImageCandidate? cameraResult;
   ReceiptImageCandidate? galleryResult;
   ReceiptAcquisitionSource? lastSource;
+  Completer<ReceiptImageCandidate?>? pendingResult;
 
   @override
   Future<ReceiptImageCandidate?> acquire(
     ReceiptAcquisitionSource source,
   ) async {
     lastSource = source;
+    if (pendingResult case final pending?) return pending.future;
     return source == ReceiptAcquisitionSource.camera
         ? cameraResult
         : galleryResult;

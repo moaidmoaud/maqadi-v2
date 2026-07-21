@@ -8,12 +8,15 @@ import '../../domain/receipt_ocr_request.dart';
 import '../../domain/receipt_ocr_result.dart';
 import 'ml_kit_ocr_result_mapper.dart';
 
-class MlKitReceiptOcrProvider implements ReceiptOcrProvider {
-  const MlKitReceiptOcrProvider({
+class MlKitReceiptOcrProvider
+    implements ReceiptOcrProvider, CancellableReceiptOcrProvider {
+  MlKitReceiptOcrProvider({
     MlKitOcrResultMapper mapper = const MlKitOcrResultMapper(),
   }) : _mapper = mapper;
 
   final MlKitOcrResultMapper _mapper;
+  final Set<_MlKitRecognitionResources> _activeResources = {};
+  int _fileCounter = 0;
 
   @override
   ReceiptOcrProviderCapabilities get capabilities =>
@@ -35,15 +38,17 @@ class MlKitReceiptOcrProvider implements ReceiptOcrProvider {
 
   @override
   Future<ReceiptOcrResult> recognize(ReceiptOcrRequest request) async {
+    _fileCounter++;
     final imageFile = File(
       '${Directory.systemTemp.path}${Platform.pathSeparator}'
       'maqadi_ocr_${DateTime.now().microsecondsSinceEpoch}'
-      '.${request.image.fileExtension}',
+      '_$_fileCounter.${request.image.fileExtension}',
     );
-    TextRecognizer? recognizer;
+    final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
+    final resources = _MlKitRecognitionResources(imageFile, recognizer);
+    _activeResources.add(resources);
     try {
       await imageFile.writeAsBytes(request.image.bytes, flush: true);
-      recognizer = TextRecognizer(script: TextRecognitionScript.latin);
       final recognized = await recognizer.processImage(
         InputImage.fromFilePath(imageFile.path),
       );
@@ -65,9 +70,18 @@ class MlKitReceiptOcrProvider implements ReceiptOcrProvider {
         cause: error,
       );
     } finally {
-      await recognizer?.close();
-      if (await imageFile.exists()) await imageFile.delete();
+      try {
+        await resources.cleanup();
+      } finally {
+        _activeResources.remove(resources);
+      }
     }
+  }
+
+  @override
+  Future<void> cancelPendingRecognitions() async {
+    final resources = _activeResources.toList(growable: false);
+    await Future.wait(resources.map((resource) => resource.cleanup()));
   }
 
   ReceiptOcrProviderException _mapPlatformException(PlatformException error) {
@@ -105,5 +119,33 @@ class MlKitReceiptOcrProvider implements ReceiptOcrProvider {
       'فشل مزود التعرف على النص في معالجة الصورة.',
       cause: error,
     );
+  }
+}
+
+class _MlKitRecognitionResources {
+  _MlKitRecognitionResources(this.imageFile, this.recognizer);
+
+  final File imageFile;
+  final TextRecognizer recognizer;
+  Future<void>? _cleanup;
+
+  Future<void> cleanup() => _cleanup ??= _performCleanup();
+
+  Future<void> _performCleanup() async {
+    Object? closeError;
+    StackTrace? closeStackTrace;
+    try {
+      await recognizer.close();
+    } catch (error, stackTrace) {
+      closeError = error;
+      closeStackTrace = stackTrace;
+    }
+    try {
+      if (await imageFile.exists()) await imageFile.delete();
+    } finally {
+      if (closeError != null) {
+        Error.throwWithStackTrace(closeError, closeStackTrace!);
+      }
+    }
   }
 }

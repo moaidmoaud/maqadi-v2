@@ -165,6 +165,14 @@ void main() {
         ),
         throwsA(isA<ReceiptOcrRecognitionFailed>()),
       );
+      expect(provider.cancellationCalls, 1);
+    });
+
+    test('dispose cancels provider work so temporary resources can close',
+        () async {
+      await service.dispose();
+
+      expect(provider.cancellationCalls, 1);
     });
   });
 }
@@ -215,7 +223,8 @@ const _structuredResult = ReceiptOcrResult(
   ],
 );
 
-class _MockReceiptOcrProvider implements ReceiptOcrProvider {
+class _MockReceiptOcrProvider
+    implements ReceiptOcrProvider, CancellableReceiptOcrProvider {
   @override
   ReceiptOcrProviderCapabilities capabilities =
       const ReceiptOcrProviderCapabilities(
@@ -233,6 +242,12 @@ class _MockReceiptOcrProvider implements ReceiptOcrProvider {
   ReceiptOcrRequest? lastRequest;
   int availabilityCalls = 0;
   int recognitionCalls = 0;
+  int cancellationCalls = 0;
+
+  @override
+  Future<void> cancelPendingRecognitions() async {
+    cancellationCalls++;
+  }
 
   @override
   Future<ReceiptOcrProviderAvailability> checkAvailability() async {

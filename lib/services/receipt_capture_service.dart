@@ -22,6 +22,8 @@ class ReceiptCaptureService extends ChangeNotifier {
   final DateTime Function() _clock;
 
   ReceiptSession _session = const ReceiptSession.idle();
+  int _operationGeneration = 0;
+  bool _disposed = false;
 
   ReceiptSession get session => _session;
 
@@ -81,53 +83,69 @@ class ReceiptCaptureService extends ChangeNotifier {
       _acquire(ReceiptAcquisitionSource.gallery);
 
   Future<void> _acquire(ReceiptAcquisitionSource source) async {
+    final operation = ++_operationGeneration;
     final previous = _session;
-    _transition(previous.copyWith(
-      status: ReceiptSessionStatus.processing,
-      clearError: true,
-    ));
+    _transition(
+      previous.copyWith(
+        status: ReceiptSessionStatus.processing,
+        clearError: true,
+      ),
+    );
     try {
       final candidate = await _imageAcquirer.acquire(source);
+      if (!_isCurrent(operation)) return;
       if (candidate == null) {
         _transition(previous);
         return;
       }
       final validated = _validator.validate(candidate, createdAt: _clock());
-      _transition(ReceiptSession(
-        status: ReceiptSessionStatus.imageSelected,
-        originalImage: validated,
-        currentImage: validated,
-      ));
+      _transition(
+        ReceiptSession(
+          status: ReceiptSessionStatus.imageSelected,
+          originalImage: validated,
+          currentImage: validated,
+        ),
+      );
     } on ReceiptCaptureException catch (error) {
-      _showError(error.message, previous);
+      if (_isCurrent(operation)) _showError(error.message, previous);
     } catch (_) {
-      _showError('تعذر الحصول على صورة الإيصال. حاول مجددًا.', previous);
+      if (_isCurrent(operation)) {
+        _showError('تعذر الحصول على صورة الإيصال. حاول مجددًا.', previous);
+      }
     }
   }
 
   Future<void> crop() async {
+    final operation = ++_operationGeneration;
     final current = _requireImage();
     final previous = _session;
-    _transition(previous.copyWith(
-      status: ReceiptSessionStatus.processing,
-      clearError: true,
-    ));
+    _transition(
+      previous.copyWith(
+        status: ReceiptSessionStatus.processing,
+        clearError: true,
+      ),
+    );
     try {
       final candidate = await _imageCropper.crop(current);
+      if (!_isCurrent(operation)) return;
       if (candidate == null) {
         _transition(previous);
         return;
       }
       final validated = _validator.validate(candidate, createdAt: _clock());
-      _transition(previous.copyWith(
-        status: ReceiptSessionStatus.editing,
-        currentImage: validated,
-        clearError: true,
-      ));
+      _transition(
+        previous.copyWith(
+          status: ReceiptSessionStatus.editing,
+          currentImage: validated,
+          clearError: true,
+        ),
+      );
     } on ReceiptCaptureException catch (error) {
-      _showError(error.message, previous);
+      if (_isCurrent(operation)) _showError(error.message, previous);
     } catch (_) {
-      _showError('تعذر قص صورة الإيصال. حاول مجددًا.', previous);
+      if (_isCurrent(operation)) {
+        _showError('تعذر قص صورة الإيصال. حاول مجددًا.', previous);
+      }
     }
   }
 
@@ -151,11 +169,13 @@ class ReceiptCaptureService extends ChangeNotifier {
         ),
         createdAt: _clock(),
       );
-      _transition(_session.copyWith(
-        status: ReceiptSessionStatus.editing,
-        currentImage: validated,
-        clearError: true,
-      ));
+      _transition(
+        _session.copyWith(
+          status: ReceiptSessionStatus.editing,
+          currentImage: validated,
+          clearError: true,
+        ),
+      );
     } on ReceiptCaptureException catch (error) {
       _showError(error.message, _session);
     } catch (_) {
@@ -166,20 +186,28 @@ class ReceiptCaptureService extends ChangeNotifier {
   void reset() {
     final original = _session.originalImage;
     if (original == null) return;
-    _transition(_session.copyWith(
-      status: ReceiptSessionStatus.imageSelected,
-      currentImage: original,
-      clearError: true,
-    ));
+    _transition(
+      _session.copyWith(
+        status: ReceiptSessionStatus.imageSelected,
+        currentImage: original,
+        clearError: true,
+      ),
+    );
   }
 
   Future<ReceiptImage> prepareNextStep() async {
+    final operation = ++_operationGeneration;
     final current = _requireImage();
-    _transition(_session.copyWith(
-      status: ReceiptSessionStatus.processing,
-      clearError: true,
-    ));
+    _transition(
+      _session.copyWith(
+        status: ReceiptSessionStatus.processing,
+        clearError: true,
+      ),
+    );
     await Future<void>.delayed(Duration.zero);
+    if (!_isCurrent(operation)) {
+      throw const ReceiptCaptureException('تم إلغاء تجهيز صورة الإيصال.');
+    }
     try {
       final validated = _validator.validate(
         ReceiptImageCandidate(
@@ -189,24 +217,39 @@ class ReceiptCaptureService extends ChangeNotifier {
         ),
         createdAt: current.createdAt,
       );
-      _transition(_session.copyWith(
-        status: ReceiptSessionStatus.ready,
-        currentImage: validated,
-        clearError: true,
-      ));
+      _transition(
+        _session.copyWith(
+          status: ReceiptSessionStatus.ready,
+          currentImage: validated,
+          clearError: true,
+        ),
+      );
       return validated;
     } on ReceiptCaptureException catch (error) {
-      _showError(error.message, _session);
+      if (_isCurrent(operation)) _showError(error.message, _session);
       rethrow;
     }
   }
 
   void cancel() {
+    _operationGeneration++;
     _transition(const ReceiptSession(status: ReceiptSessionStatus.cancelled));
   }
 
   void startOver() {
+    _operationGeneration++;
     _transition(const ReceiptSession.idle());
+  }
+
+  bool _isCurrent(int operation) =>
+      !_disposed && operation == _operationGeneration;
+
+  @override
+  void dispose() {
+    _operationGeneration++;
+    _disposed = true;
+    _session = const ReceiptSession(status: ReceiptSessionStatus.cancelled);
+    super.dispose();
   }
 
   ReceiptImage _requireImage() {
@@ -218,10 +261,12 @@ class ReceiptCaptureService extends ChangeNotifier {
   }
 
   void _showError(String message, ReceiptSession previous) {
-    _transition(previous.copyWith(
-      status: ReceiptSessionStatus.error,
-      errorMessage: message,
-    ));
+    _transition(
+      previous.copyWith(
+        status: ReceiptSessionStatus.error,
+        errorMessage: message,
+      ),
+    );
   }
 
   void _transition(ReceiptSession next) {

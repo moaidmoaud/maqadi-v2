@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:collection';
+
 import '../models/inventory_models.dart';
+import '../models/price_history_models.dart';
 import '../models/purchase_models.dart';
-import '../receipt_import/application/receipt_purchase_gateway.dart';
-import '../receipt_import/domain/receipt_draft.dart';
+import '../purchase/application/purchase_creation_gateway.dart';
+import '../purchase/domain/purchase_creation_command.dart';
 import '../repositories/purchase_repository.dart';
 import '../utils/arabic_text.dart';
 import 'inventory_service.dart';
@@ -11,7 +15,7 @@ import 'store_service.dart';
 typedef PurchaseClock = DateTime Function();
 typedef InventoryChangePersister = Future<void> Function();
 
-class PurchaseService implements ReceiptPurchaseGateway {
+class PurchaseService implements PurchaseCreationGateway {
   PurchaseService({
     required PurchaseRepository repository,
     required InventoryService inventoryService,
@@ -33,6 +37,9 @@ class PurchaseService implements ReceiptPurchaseGateway {
   final PurchaseClock _clock;
   final InventoryChangePersister? _persistInventory;
   int _idCounter = 0;
+  final Queue<_QueuedPurchaseWrite> _writeQueue = Queue();
+  bool _writeActive = false;
+  final Map<String, Future<PurchaseCreationResult>> _creationRequests = {};
 
   List<PurchaseProductOption> availableProducts() => _inventory.items
       .map(
@@ -52,82 +59,92 @@ class PurchaseService implements ReceiptPurchaseGateway {
   String newPurchaseId() => _newId('purchase');
 
   @override
-  List<ReceiptDraftProductOption> receiptImportProducts() => availableProducts()
-      .map(
-        (product) => ReceiptDraftProductOption(
-          id: product.id,
-          name: product.name,
-          category: product.category,
-          unit: product.unit,
+  List<PurchaseProductOption> purchaseCreationProducts() => availableProducts();
+
+  @override
+  Future<List<Store>> purchaseCreationStores() => availableStoresForPurchase();
+
+  @override
+  Future<PurchaseCreationResult> createFromCommand(
+    PurchaseCreationCommand command,
+  ) {
+    final requestId = command.requestId.trim();
+    if (requestId.isEmpty) {
+      return Future.error(
+        const PurchaseCreationException(
+          PurchaseCreationErrorCode.validation,
+          'معرّف طلب الشراء مطلوب.',
         ),
-      )
-      .toList(growable: false);
+      );
+    }
+    final existing = _creationRequests[requestId];
+    if (existing != null) return existing;
+    final operation = _createFromCommand(command);
+    _creationRequests[requestId] = operation;
+    operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {
+        if (identical(_creationRequests[requestId], operation)) {
+          _creationRequests.remove(requestId);
+        }
+      },
+    );
+    return operation;
+  }
 
-  @override
-  Future<List<ReceiptDraftStoreOption>> receiptImportStores() async =>
-      (await availableStoresForPurchase())
-          .where((store) => store.isActive)
-          .map(
-            (store) => ReceiptDraftStoreOption(
-              id: store.id,
-              name: store.name,
-            ),
-          )
-          .toList(growable: false);
-
-  @override
-  Future<ReceiptImportConfirmation> createPurchaseFromReceiptDraft(
-    ReceiptDraft draft,
+  Future<PurchaseCreationResult> _createFromCommand(
+    PurchaseCreationCommand command,
   ) async {
     try {
       final purchaseId = newPurchaseId();
       final purchase = await createPurchase(
         id: purchaseId,
-        storeId: draft.metadata.storeId ?? '',
-        purchaseDate: draft.metadata.purchaseDate,
+        storeId: command.storeId,
+        purchaseDate: command.purchaseDate,
         items: [
-          for (final draftItem in draft.items)
+          for (final item in command.items)
             PurchaseItem(
               id: _newId('purchase-item'),
               purchaseId: purchaseId,
-              productId: draftItem.productId ?? '',
-              quantity: draftItem.quantity,
-              unitPrice: draftItem.unitPrice,
-              finalUnitPrice: draftItem.unitPrice,
-              lineTotal: draftItem.lineTotal,
-              expiryDate: draftItem.expiryDate,
+              productId: item.productId,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              finalUnitPrice: item.unitPrice,
+              lineTotal: item.quantity * item.unitPrice,
+              expiryDate: item.expiryDate,
+              batchId: item.batchId,
             ),
         ],
-        discountAmount: draft.discount,
-        taxAmount: draft.tax,
-        notes: draft.metadata.notes,
+        discountAmount: command.discount,
+        taxAmount: command.tax,
+        notes: command.notes,
       );
-      return ReceiptImportConfirmation(
+      return PurchaseCreationResult(
         purchaseId: purchase.id,
         total: purchase.total,
         purchaseDate: purchase.purchaseDate,
       );
     } on PurchaseValidationException catch (error) {
-      throw ReceiptPurchaseGatewayException(
-        ReceiptPurchaseGatewayErrorCode.validation,
+      throw PurchaseCreationException(
+        PurchaseCreationErrorCode.validation,
         error.message,
         cause: error,
       );
     } on StoreValidationException catch (error) {
-      throw ReceiptPurchaseGatewayException(
-        ReceiptPurchaseGatewayErrorCode.validation,
+      throw PurchaseCreationException(
+        PurchaseCreationErrorCode.validation,
         error.message,
         cause: error,
       );
     } on ArgumentError catch (error) {
-      throw ReceiptPurchaseGatewayException(
-        ReceiptPurchaseGatewayErrorCode.validation,
+      throw PurchaseCreationException(
+        PurchaseCreationErrorCode.validation,
         'بيانات الإيصال غير صالحة لإنشاء عملية شراء.',
         cause: error,
       );
     } catch (error) {
-      throw ReceiptPurchaseGatewayException(
-        ReceiptPurchaseGatewayErrorCode.creation,
+      throw PurchaseCreationException(
+        PurchaseCreationErrorCode.creation,
         'تعذر حفظ عملية الشراء من الإيصال.',
         cause: error,
       );
@@ -212,6 +229,29 @@ class PurchaseService implements ReceiptPurchaseGateway {
     double? discountAmount,
     double? taxAmount,
     String? notes,
+  }) =>
+      _serializeWrite(
+        () => _createPurchase(
+          id: id,
+          storeId: storeId,
+          purchaseDate: purchaseDate,
+          items: items,
+          taxRate: taxRate,
+          discountAmount: discountAmount,
+          taxAmount: taxAmount,
+          notes: notes,
+        ),
+      );
+
+  Future<Purchase> _createPurchase({
+    required String id,
+    required String storeId,
+    required DateTime purchaseDate,
+    required List<PurchaseItem> items,
+    double taxRate = 0,
+    double? discountAmount,
+    double? taxAmount,
+    String? notes,
   }) async {
     final resolvedStoreId =
         (await _storeService?.storeForNewPurchase(storeId))?.id ?? storeId;
@@ -250,11 +290,18 @@ class PurchaseService implements ReceiptPurchaseGateway {
     validatePurchase(purchase, normalizedItems);
     _validateInventoryTargets(normalizedItems);
 
-    final addedBatches = <_AddedPurchaseBatch>[];
+    final inventorySnapshot = _InventorySnapshot.capture(_inventory);
+    final purchaseSnapshot = await _purchaseSnapshot(purchase.id);
+    final historySnapshot = await _priceHistory?.snapshotForPurchase(
+      purchase.id,
+    );
     final persistedItems = <PurchaseItem>[];
-    var repositoryCreated = false;
+    var inventoryTouched = false;
+    var purchaseTouched = false;
+    var historyTouched = false;
     try {
       for (final item in normalizedItems) {
+        inventoryTouched = true;
         final pantryItem = _inventory.findById(item.productId)!;
         final batch = _inventory.addBatch(
           pantryItem,
@@ -265,33 +312,47 @@ class PurchaseService implements ReceiptPurchaseGateway {
           note: 'شراء ${purchase.id}',
           movementType: 'شراء',
         );
-        addedBatches.add(_AddedPurchaseBatch(pantryItem, batch));
         persistedItems.add(item.copyWith(batchId: batch.id));
       }
+      purchaseTouched = true;
       await _repository.createPurchase(purchase, persistedItems);
-      repositoryCreated = true;
+      historyTouched = _priceHistory != null;
       await _priceHistory?.recordPurchase(purchase, persistedItems);
       await _persistInventory?.call();
       return purchase;
-    } catch (_) {
-      if (repositoryCreated) {
-        try {
-          await _priceHistory?.removePurchaseHistory(purchase.id);
-        } catch (_) {
-          // Preserve the original operation failure during best-effort rollback.
-        }
-        await _repository.deletePurchase(purchase.id);
-      }
-      for (final added in addedBatches.reversed) {
-        if (added.item.batches.contains(added.batch)) {
-          _inventory.deleteBatch(added.item, added.batch);
-        }
-      }
-      rethrow;
+    } catch (error, stackTrace) {
+      await _rollbackUnitOfWork(
+        purchaseId: purchase.id,
+        purchaseSnapshot: purchaseSnapshot,
+        historySnapshot: historySnapshot,
+        inventorySnapshot: inventorySnapshot,
+        restorePurchase: purchaseTouched,
+        restoreHistory: historyTouched,
+        restoreInventory: inventoryTouched,
+        originalError: error,
+        originalStackTrace: stackTrace,
+      );
     }
   }
 
   Future<Purchase> updatePurchase({
+    required Purchase purchase,
+    required List<PurchaseItem> items,
+    double taxRate = 0,
+    double? discountAmount,
+    double? taxAmount,
+  }) =>
+      _serializeWrite(
+        () => _updatePurchase(
+          purchase: purchase,
+          items: items,
+          taxRate: taxRate,
+          discountAmount: discountAmount,
+          taxAmount: taxAmount,
+        ),
+      );
+
+  Future<Purchase> _updatePurchase({
     required Purchase purchase,
     required List<PurchaseItem> items,
     double taxRate = 0,
@@ -343,49 +404,66 @@ class PurchaseService implements ReceiptPurchaseGateway {
     validatePurchase(updated, normalizedItems);
     _validateInventoryTargets(normalizedItems, replacing: existingItems);
 
-    final historySnapshot =
-        await _priceHistory?.snapshotForPurchase(purchase.id);
-    var repositoryUpdated = false;
+    final inventorySnapshot = _InventorySnapshot.capture(_inventory);
+    final purchaseSnapshot = _PurchaseSnapshot(existing, existingItems);
+    final historySnapshot = await _priceHistory?.snapshotForPurchase(
+      purchase.id,
+    );
+    var historyTouched = false;
+    var inventoryTouched = false;
+    var purchaseTouched = false;
     try {
+      historyTouched = _priceHistory != null;
       await _priceHistory?.reconcilePurchase(
         previousPurchase: existing,
         previousItems: existingItems,
         updatedPurchase: updated,
         updatedItems: normalizedItems,
       );
+      inventoryTouched = true;
       final persistedItems = _reconcileInventory(
         existingItems,
         updated,
         normalizedItems,
       );
+      purchaseTouched = true;
       await _repository.updatePurchase(updated, persistedItems);
-      repositoryUpdated = true;
       await _persistInventory?.call();
       return updated;
-    } catch (_) {
-      if (!repositoryUpdated && historySnapshot != null) {
-        try {
-          await _priceHistory?.restorePurchaseSnapshot(
-            purchase.id,
-            historySnapshot,
-          );
-        } catch (_) {
-          // Preserve the original operation failure during best-effort rollback.
-        }
-      }
-      rethrow;
+    } catch (error, stackTrace) {
+      await _rollbackUnitOfWork(
+        purchaseId: purchase.id,
+        purchaseSnapshot: purchaseSnapshot,
+        historySnapshot: historySnapshot,
+        inventorySnapshot: inventorySnapshot,
+        restorePurchase: purchaseTouched,
+        restoreHistory: historyTouched,
+        restoreInventory: inventoryTouched,
+        originalError: error,
+        originalStackTrace: stackTrace,
+      );
     }
   }
 
-  Future<void> deletePurchase(String purchaseId) async {
+  Future<void> deletePurchase(String purchaseId) =>
+      _serializeWrite(() => _deletePurchase(purchaseId));
+
+  Future<void> _deletePurchase(String purchaseId) async {
     final purchase = await _repository.readPurchase(purchaseId);
     if (purchase == null) return;
     final items = await _repository.readPurchaseDetails(purchaseId);
-    final historySnapshot =
-        await _priceHistory?.snapshotForPurchase(purchaseId);
-    var repositoryDeleted = false;
+    final inventorySnapshot = _InventorySnapshot.capture(_inventory);
+    final purchaseSnapshot = _PurchaseSnapshot(purchase, items);
+    final historySnapshot = await _priceHistory?.snapshotForPurchase(
+      purchaseId,
+    );
+    var historyTouched = false;
+    var inventoryTouched = false;
+    var purchaseTouched = false;
     try {
+      historyTouched = _priceHistory != null;
       await _priceHistory?.removePurchaseHistory(purchaseId);
+      inventoryTouched = true;
       for (final item in items) {
         final pantryItem = _inventory.findById(item.productId);
         final batchId = item.batchId;
@@ -393,25 +471,28 @@ class PurchaseService implements ReceiptPurchaseGateway {
         final batch = _inventory.findBatchById(pantryItem, batchId);
         if (batch != null) _inventory.deleteBatch(pantryItem, batch);
       }
+      purchaseTouched = true;
       await _repository.deletePurchase(purchaseId);
-      repositoryDeleted = true;
       await _persistInventory?.call();
-    } catch (_) {
-      if (!repositoryDeleted && historySnapshot != null) {
-        try {
-          await _priceHistory?.restorePurchaseSnapshot(
-            purchaseId,
-            historySnapshot,
-          );
-        } catch (_) {
-          // Preserve the original operation failure during best-effort rollback.
-        }
-      }
-      rethrow;
+    } catch (error, stackTrace) {
+      await _rollbackUnitOfWork(
+        purchaseId: purchaseId,
+        purchaseSnapshot: purchaseSnapshot,
+        historySnapshot: historySnapshot,
+        inventorySnapshot: inventorySnapshot,
+        restorePurchase: purchaseTouched,
+        restoreHistory: historyTouched,
+        restoreInventory: inventoryTouched,
+        originalError: error,
+        originalStackTrace: stackTrace,
+      );
     }
   }
 
-  Future<void> deletePurchaseSafely(String purchaseId) async {
+  Future<void> deletePurchaseSafely(String purchaseId) =>
+      _serializeWrite(() => _deletePurchaseSafely(purchaseId));
+
+  Future<void> _deletePurchaseSafely(String purchaseId) async {
     final purchase = await _repository.readPurchase(purchaseId);
     if (purchase == null) return;
     final items = await _repository.readPurchaseDetails(purchaseId);
@@ -430,7 +511,7 @@ class PurchaseService implements ReceiptPurchaseGateway {
         );
       }
     }
-    await deletePurchase(purchaseId);
+    await _deletePurchase(purchaseId);
   }
 
   Future<List<String>> readStoreIds() async {
@@ -467,11 +548,7 @@ class PurchaseService implements ReceiptPurchaseGateway {
     final timestamp = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
     return (await readStoreIds())
         .map(
-          (storeId) => Store(
-            id: storeId,
-            name: storeId,
-            createdAt: timestamp,
-          ),
+          (storeId) => Store(id: storeId, name: storeId, createdAt: timestamp),
         )
         .toList(growable: false);
   }
@@ -932,6 +1009,93 @@ class PurchaseService implements ReceiptPurchaseGateway {
     if (batch != null) _inventory.deleteBatch(pantryItem, batch);
   }
 
+  Future<T> _serializeWrite<T>(Future<T> Function() operation) {
+    final completer = Completer<T>();
+    _writeQueue.add(_TypedQueuedPurchaseWrite(operation, completer));
+    _startNextWrite();
+    return completer.future;
+  }
+
+  void _startNextWrite() {
+    if (_writeActive || _writeQueue.isEmpty) return;
+    _writeActive = true;
+    _writeQueue.removeFirst().run().whenComplete(() {
+      _writeActive = false;
+      _startNextWrite();
+    });
+  }
+
+  Future<_PurchaseSnapshot> _purchaseSnapshot(String purchaseId) async {
+    final purchase = await _repository.readPurchase(purchaseId);
+    final items = purchase == null
+        ? const <PurchaseItem>[]
+        : await _repository.readPurchaseDetails(purchaseId);
+    return _PurchaseSnapshot(purchase, items);
+  }
+
+  Future<void> _restorePurchaseSnapshot(
+    String purchaseId,
+    _PurchaseSnapshot snapshot,
+  ) async {
+    final current = await _repository.readPurchase(purchaseId);
+    final purchase = snapshot.purchase;
+    if (purchase == null) {
+      if (current != null) await _repository.deletePurchase(purchaseId);
+      return;
+    }
+    if (current == null) {
+      await _repository.createPurchase(purchase, snapshot.items);
+    } else {
+      await _repository.updatePurchase(purchase, snapshot.items);
+    }
+  }
+
+  Future<Never> _rollbackUnitOfWork({
+    required String purchaseId,
+    required _PurchaseSnapshot purchaseSnapshot,
+    required List<PriceHistoryRecord>? historySnapshot,
+    required _InventorySnapshot inventorySnapshot,
+    required bool restorePurchase,
+    required bool restoreHistory,
+    required bool restoreInventory,
+    required Object originalError,
+    required StackTrace originalStackTrace,
+  }) async {
+    final rollbackErrors = <Object>[];
+    if (restoreInventory) {
+      try {
+        inventorySnapshot.restore(_inventory);
+        await _persistInventory?.call();
+      } catch (error) {
+        rollbackErrors.add(error);
+      }
+    }
+    if (restoreHistory && historySnapshot != null) {
+      try {
+        await _priceHistory?.restorePurchaseSnapshot(
+          purchaseId,
+          historySnapshot,
+        );
+      } catch (error) {
+        rollbackErrors.add(error);
+      }
+    }
+    if (restorePurchase) {
+      try {
+        await _restorePurchaseSnapshot(purchaseId, purchaseSnapshot);
+      } catch (error) {
+        rollbackErrors.add(error);
+      }
+    }
+    if (rollbackErrors.isNotEmpty) {
+      throw PurchaseUnitOfWorkException(
+        originalError: originalError,
+        rollbackErrors: List.unmodifiable(rollbackErrors),
+      );
+    }
+    Error.throwWithStackTrace(originalError, originalStackTrace);
+  }
+
   void _validateTaxRate(double taxRate) {
     if (!taxRate.isFinite || taxRate < 0 || taxRate > 1) {
       throw ArgumentError.value(
@@ -958,11 +1122,106 @@ class PurchaseService implements ReceiptPurchaseGateway {
   }
 }
 
-class _AddedPurchaseBatch {
-  const _AddedPurchaseBatch(this.item, this.batch);
+class _PurchaseSnapshot {
+  const _PurchaseSnapshot(this.purchase, this.items);
 
-  final PantryItem item;
-  final InventoryBatch batch;
+  final Purchase? purchase;
+  final List<PurchaseItem> items;
+}
+
+class _InventorySnapshot {
+  _InventorySnapshot._(this.items, this.itemStates, this.movements);
+
+  factory _InventorySnapshot.capture(InventoryService inventory) {
+    final items = inventory.items.toList(growable: false);
+    return _InventorySnapshot._(
+      items,
+      {
+        for (final item in items)
+          item.id: PantryItem.fromJson(
+            Map<String, dynamic>.from(item.toJson()),
+          ),
+      },
+      inventory.movements
+          .map(
+            (movement) => PantryMovement.fromJson(
+              Map<String, dynamic>.from(movement.toJson()),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  final List<PantryItem> items;
+  final Map<String, PantryItem> itemStates;
+  final List<PantryMovement> movements;
+
+  void restore(InventoryService inventory) {
+    for (final item in items) {
+      final state = itemStates[item.id]!;
+      item
+        ..name = state.name
+        ..category = state.category
+        ..minimum = state.minimum
+        ..unit = state.unit
+        ..location = state.location
+        ..primaryBarcode = state.primaryBarcode;
+      item.additionalBarcodes
+        ..clear()
+        ..addAll(state.additionalBarcodes);
+      item.batches
+        ..clear()
+        ..addAll(
+          state.batches.map(
+            (batch) => InventoryBatch.fromJson(
+              Map<String, dynamic>.from(batch.toJson()),
+            ),
+          ),
+        );
+    }
+    inventory.replaceState(
+      items: items,
+      movements: movements.map(
+        (movement) => PantryMovement.fromJson(
+          Map<String, dynamic>.from(movement.toJson()),
+        ),
+      ),
+    );
+  }
+}
+
+class PurchaseUnitOfWorkException implements Exception {
+  const PurchaseUnitOfWorkException({
+    required this.originalError,
+    required this.rollbackErrors,
+  });
+
+  final Object originalError;
+  final List<Object> rollbackErrors;
+
+  @override
+  String toString() =>
+      'Purchase unit of work rollback failed: ${rollbackErrors.length} error(s).';
+}
+
+abstract interface class _QueuedPurchaseWrite {
+  Future<void> run();
+}
+
+class _TypedQueuedPurchaseWrite<T> implements _QueuedPurchaseWrite {
+  const _TypedQueuedPurchaseWrite(this.operation, this.completer);
+
+  final Future<T> Function() operation;
+  final Completer<T> completer;
+
+  @override
+  Future<void> run() async {
+    try {
+      completer.complete(await operation());
+    } catch (error, stackTrace) {
+      completer.completeError(error, stackTrace);
+    }
+  }
 }
 
 class PurchaseValidationException implements Exception {

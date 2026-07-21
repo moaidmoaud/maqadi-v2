@@ -35,11 +35,7 @@ enum ReceiptOcrProviderErrorCode {
 }
 
 class ReceiptOcrProviderException implements Exception {
-  const ReceiptOcrProviderException(
-    this.code,
-    this.message, {
-    this.cause,
-  });
+  const ReceiptOcrProviderException(this.code, this.message, {this.cause});
 
   final ReceiptOcrProviderErrorCode code;
   final String message;
@@ -52,4 +48,8 @@ abstract interface class ReceiptOcrProvider {
   Future<ReceiptOcrProviderAvailability> checkAvailability();
 
   Future<ReceiptOcrResult> recognize(ReceiptOcrRequest request);
+}
+
+abstract interface class CancellableReceiptOcrProvider {
+  Future<void> cancelPendingRecognitions();
 }

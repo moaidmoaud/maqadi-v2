@@ -14,12 +14,14 @@ class ReceiptReviewScreen extends StatefulWidget {
     required this.service,
     required this.ocrResult,
     required this.matchResult,
+    this.terminateReceiptFlowOnConfirm = false,
     this.onConfirmed,
   });
 
   final ReceiptImportService service;
   final ReceiptOcrResult ocrResult;
   final ProductMatchResult matchResult;
+  final bool terminateReceiptFlowOnConfirm;
   final ValueChanged<ReceiptImportConfirmation>? onConfirmed;
 
   @override
@@ -83,10 +85,7 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
       if (!activeIds.contains(id)) _controllers.remove(id)?.dispose();
     }
     for (final item in draft.items) {
-      _controllers.putIfAbsent(
-        item.id,
-        () => _DraftItemControllers(item),
-      );
+      _controllers.putIfAbsent(item.id, () => _DraftItemControllers(item));
     }
   }
 
@@ -95,10 +94,8 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
         context: context,
         isScrollControlled: true,
         showDragHandle: true,
-        builder: (context) => _ReceiptProductPicker(
-          review: _review!,
-          service: widget.service,
-        ),
+        builder: (context) =>
+            _ReceiptProductPicker(review: _review!, service: widget.service),
       );
 
   Future<void> _replaceProduct(ReceiptDraftItem item) async {
@@ -148,6 +145,7 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
   }
 
   Future<void> _confirm() async {
+    if (_confirming) return;
     final draft = _review!.draft;
     widget.service.updateMetadata(draft, notes: _notesController.text);
     final errors = widget.service.validate(draft);
@@ -163,7 +161,13 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
       final confirmation = await widget.service.confirm(draft);
       if (!mounted) return;
       widget.onConfirmed?.call(confirmation);
-      if (widget.onConfirmed == null) Navigator.pop(context, confirmation);
+      if (widget.onConfirmed == null) {
+        if (widget.terminateReceiptFlowOnConfirm) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        } else {
+          Navigator.pop(context, confirmation);
+        }
+      }
     } on ReceiptDraftValidationFailed catch (failure) {
       if (!mounted) return;
       setState(() => _validationErrors = failure.errors);
@@ -177,39 +181,42 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
 
   void _cancel() {
     final review = _review;
-    if (review != null) widget.service.cancel(review.draft);
+    if (review != null && !widget.service.cancel(review.draft)) return;
     Navigator.maybePop(context);
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        key: const ValueKey('receipt-review-screen'),
-        appBar: AppBar(
-          title: const Text('مراجعة الإيصال'),
-          leading: IconButton(
-            key: const ValueKey('receipt-import-cancel'),
-            tooltip: 'إلغاء الاستيراد',
-            onPressed: _cancel,
-            icon: const Icon(Icons.close),
+  Widget build(BuildContext context) => PopScope(
+        canPop: !_confirming,
+        child: Scaffold(
+          key: const ValueKey('receipt-review-screen'),
+          appBar: AppBar(
+            title: const Text('مراجعة الإيصال'),
+            leading: IconButton(
+              key: const ValueKey('receipt-import-cancel'),
+              tooltip: 'إلغاء الاستيراد',
+              onPressed: _confirming ? null : _cancel,
+              icon: const Icon(Icons.close),
+            ),
           ),
+          body: SafeArea(child: _buildBody()),
+          bottomNavigationBar: _status == ReceiptReviewViewStatus.review
+              ? SafeArea(
+                  minimum: const EdgeInsets.all(16),
+                  child: FilledButton.icon(
+                    key: const ValueKey('confirm-receipt-import'),
+                    onPressed: _confirming ? null : _confirm,
+                    icon: _confirming
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.check_circle_outline),
+                    label: const Text('تأكيد الاستيراد'),
+                  ),
+                )
+              : null,
         ),
-        body: SafeArea(child: _buildBody()),
-        bottomNavigationBar: _status == ReceiptReviewViewStatus.review
-            ? SafeArea(
-                minimum: const EdgeInsets.all(16),
-                child: FilledButton.icon(
-                  key: const ValueKey('confirm-receipt-import'),
-                  onPressed: _confirming ? null : _confirm,
-                  icon: _confirming
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check_circle_outline),
-                  label: const Text('تأكيد الاستيراد'),
-                ),
-              )
-            : null,
       );
 
   Widget _buildBody() => switch (_status) {
@@ -290,8 +297,10 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
         ],
         if (draft.unmatchedLines.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Text('أسطر غير مطابقة',
-              style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'أسطر غير مطابقة',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           for (final line in draft.unmatchedLines.toList())
             ListTile(
               title: Text(line),
@@ -513,10 +522,8 @@ class _ReceiptProductPickerState extends State<_ReceiptProductPicker> {
                   key: const ValueKey('receipt-product-search'),
                   autofocus: true,
                   onChanged: (query) => setState(() {
-                    _products = widget.service.searchProducts(
-                      widget.review,
-                      query,
-                    );
+                    _products =
+                        widget.service.searchProducts(widget.review, query);
                   }),
                   decoration: const InputDecoration(
                     labelText: 'بحث عن منتج',
@@ -533,8 +540,7 @@ class _ReceiptProductPickerState extends State<_ReceiptProductPicker> {
                             final product = _products[index];
                             return ListTile(
                               key: ValueKey(
-                                'select-receipt-product-${product.id}',
-                              ),
+                                  'select-receipt-product-${product.id}'),
                               title: Text(product.name),
                               subtitle: Text(
                                 '${product.category} • ${product.unit}',

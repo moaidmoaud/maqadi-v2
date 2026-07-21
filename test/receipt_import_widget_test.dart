@@ -2,18 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:maqadi_v2/models/purchase_models.dart';
 import 'package:maqadi_v2/product_matching/domain/product_match_models.dart';
+import 'package:maqadi_v2/purchase/application/purchase_creation_gateway.dart';
+import 'package:maqadi_v2/purchase/domain/purchase_creation_command.dart';
 import 'package:maqadi_v2/receipt_import/application/receipt_import_service.dart';
-import 'package:maqadi_v2/receipt_import/application/receipt_purchase_gateway.dart';
 import 'package:maqadi_v2/receipt_import/domain/receipt_draft.dart';
 import 'package:maqadi_v2/receipt_import/presentation/receipt_review_screen.dart';
 import 'package:maqadi_v2/receipt_ocr/domain/receipt_ocr_result.dart';
 
 void main() {
-  testWidgets('shows loading while receipt review data is prepared',
-      (tester) async {
+  testWidgets('shows loading while receipt review data is prepared', (
+    tester,
+  ) async {
     final gateway = _WidgetReceiptGateway()
-      ..pendingStores = Completer<List<ReceiptDraftStoreOption>>();
+      ..pendingStores = Completer<List<Store>>();
 
     await _pumpReview(tester, gateway);
 
@@ -21,22 +24,28 @@ void main() {
     expect(find.text('جارٍ تجهيز مسودة الإيصال...'), findsOneWidget);
   });
 
-  testWidgets('shows draft items, warnings, totals, and unmatched lines',
-      (tester) async {
+  testWidgets('shows draft items, warnings, totals, and unmatched lines', (
+    tester,
+  ) async {
     await _pumpReview(tester, _WidgetReceiptGateway(), includeUnmatched: true);
     await tester.pumpAndSettle();
 
     expect(
-        find.byKey(const ValueKey('receipt-review-content')), findsOneWidget);
+      find.byKey(const ValueKey('receipt-review-content')),
+      findsOneWidget,
+    );
     expect(find.text('Milk'), findsWidgets);
     expect(
-        find.byKey(const ValueKey('receipt-draft-warnings')), findsOneWidget);
+      find.byKey(const ValueKey('receipt-draft-warnings')),
+      findsOneWidget,
+    );
     expect(find.text('Receipt total'), findsWidgets);
     expect(find.byKey(const ValueKey('receipt-draft-totals')), findsOneWidget);
   });
 
-  testWidgets('shows friendly validation without creating a purchase',
-      (tester) async {
+  testWidgets('shows friendly validation without creating a purchase', (
+    tester,
+  ) async {
     final gateway = _WidgetReceiptGateway();
     await _pumpReview(tester, gateway);
     await tester.pumpAndSettle();
@@ -52,8 +61,9 @@ void main() {
     expect(gateway.createCalls, 0);
   });
 
-  testWidgets('edits quantity and price then confirms through the gateway',
-      (tester) async {
+  testWidgets('edits quantity and price then confirms through the gateway', (
+    tester,
+  ) async {
     final gateway = _WidgetReceiptGateway();
     ReceiptImportConfirmation? confirmed;
     await _pumpReview(
@@ -81,14 +91,87 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(gateway.createCalls, 1);
-    expect(gateway.lastDraft!.items.single.quantity, 2);
-    expect(gateway.lastDraft!.items.single.unitPrice, 4.5);
-    expect(gateway.lastDraft!.totals.total, 9);
+    expect(gateway.lastCommand!.items.single.quantity, 2);
+    expect(gateway.lastCommand!.items.single.unitPrice, 4.5);
     expect(confirmed!.purchaseId, 'purchase-widget');
   });
 
-  testWidgets('searches manually and replaces the selected product',
-      (tester) async {
+  testWidgets('double tap starts only one purchase creation', (tester) async {
+    final gateway = _WidgetReceiptGateway()
+      ..pendingCreation = Completer<PurchaseCreationResult>();
+    await _pumpReview(tester, gateway, onConfirmed: (_) {});
+    await tester.pumpAndSettle();
+    await _completeRequiredFields(tester);
+
+    final confirm = find.byKey(const ValueKey('confirm-receipt-import'));
+    await tester.tap(confirm);
+    await tester.tap(confirm);
+    await tester.pump();
+
+    expect(gateway.createCalls, 1);
+    gateway.pendingCreation!.complete(
+      PurchaseCreationResult(
+        purchaseId: 'purchase-widget',
+        total: 5,
+        purchaseDate: DateTime.utc(2026, 7, 21),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(gateway.createCalls, 1);
+  });
+
+  testWidgets('successful import removes the complete receipt route stack', (
+    tester,
+  ) async {
+    final gateway = _WidgetReceiptGateway();
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        home: const Scaffold(body: Text('home-screen')),
+      ),
+    );
+    for (final name in ['capture', 'ocr', 'matching']) {
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(
+          settings: RouteSettings(name: name),
+          builder: (_) => Scaffold(body: Text(name)),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+    navigatorKey.currentState!.push(
+      MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'review'),
+        builder: (_) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: ReceiptReviewScreen(
+            service: ReceiptImportService(
+              purchaseGateway: gateway,
+              clock: () => DateTime.utc(2026, 7, 21, 10),
+            ),
+            ocrResult: _ocr(['Milk']),
+            matchResult: _matches(),
+            terminateReceiptFlowOnConfirm: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _completeRequiredFields(tester);
+
+    await tester.tap(find.byKey(const ValueKey('confirm-receipt-import')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home-screen'), findsOneWidget);
+    expect(find.byKey(const ValueKey('receipt-review-screen')), findsNothing);
+    expect(navigatorKey.currentState!.canPop(), isFalse);
+    expect(gateway.createCalls, 1);
+  });
+
+  testWidgets('searches manually and replaces the selected product', (
+    tester,
+  ) async {
     await _pumpReview(tester, _WidgetReceiptGateway());
     await tester.pumpAndSettle();
 
@@ -110,8 +193,9 @@ void main() {
     expect(find.text('Brown Bread'), findsOneWidget);
   });
 
-  testWidgets('removes a line and adds it back from unmatched lines',
-      (tester) async {
+  testWidgets('removes a line and adds it back from unmatched lines', (
+    tester,
+  ) async {
     await _pumpReview(tester, _WidgetReceiptGateway());
     await tester.pumpAndSettle();
 
@@ -119,14 +203,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('receipt-draft-empty')), findsOneWidget);
-    final addUnmatched =
-        find.byKey(ValueKey('add-unmatched-${'Milk'.hashCode}'));
+    final addUnmatched = find.byKey(
+      ValueKey('add-unmatched-${'Milk'.hashCode}'),
+    );
     await tester.ensureVisible(addUnmatched);
     await tester.tap(addUnmatched);
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('select-receipt-product-milk')),
-    );
+    await tester.tap(find.byKey(const ValueKey('select-receipt-product-milk')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('receipt-draft-empty')), findsNothing);
@@ -136,8 +219,8 @@ void main() {
   testWidgets('shows an error state and retries preparation', (tester) async {
     final gateway = _WidgetReceiptGateway()
       ..loadErrors.add(
-        const ReceiptPurchaseGatewayException(
-          ReceiptPurchaseGatewayErrorCode.repository,
+        const PurchaseCreationException(
+          PurchaseCreationErrorCode.repository,
           'catalog offline',
         ),
       );
@@ -151,7 +234,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-        find.byKey(const ValueKey('receipt-review-content')), findsOneWidget);
+      find.byKey(const ValueKey('receipt-review-content')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('cancel action does not create a purchase', (tester) async {
@@ -170,6 +255,17 @@ Finder _keyStartsWith(String prefix) => find.byWidgetPredicate((widget) {
       final key = widget.key;
       return key is ValueKey<String> && key.value.startsWith(prefix);
     });
+
+Future<void> _completeRequiredFields(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('receipt-import-store')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Market').last);
+  await tester.pumpAndSettle();
+  final price = _keyStartsWith('receipt-price-');
+  await tester.ensureVisible(price);
+  await tester.enterText(price, '5');
+  await tester.pump();
+}
 
 Future<void> _pumpReview(
   WidgetTester tester,
@@ -239,51 +335,56 @@ ProductMatchResult _matches() {
   );
 }
 
-class _WidgetReceiptGateway implements ReceiptPurchaseGateway {
-  final List<ReceiptDraftProductOption> products = const [
-    ReceiptDraftProductOption(
+class _WidgetReceiptGateway implements PurchaseCreationGateway {
+  final List<PurchaseProductOption> products = const [
+    PurchaseProductOption(
       id: 'milk',
       name: 'Milk',
       category: 'Dairy',
       unit: 'unit',
     ),
-    ReceiptDraftProductOption(
+    PurchaseProductOption(
       id: 'bread',
       name: 'Brown Bread',
       category: 'Bakery',
       unit: 'unit',
     ),
   ];
-  final List<ReceiptDraftStoreOption> stores = const [
-    ReceiptDraftStoreOption(id: 'store', name: 'Market'),
+  final List<Store> stores = [
+    Store(id: 'store', name: 'Market', createdAt: DateTime.utc(2026, 1, 1)),
   ];
   final List<Object> loadErrors = [];
-  Completer<List<ReceiptDraftStoreOption>>? pendingStores;
-  ReceiptDraft? lastDraft;
+  Completer<List<Store>>? pendingStores;
+  PurchaseCreationCommand? lastCommand;
+  Completer<PurchaseCreationResult>? pendingCreation;
   int createCalls = 0;
 
   @override
-  List<ReceiptDraftProductOption> receiptImportProducts() {
+  List<PurchaseProductOption> purchaseCreationProducts() {
     if (loadErrors.isNotEmpty) throw loadErrors.removeAt(0);
     return products;
   }
 
   @override
-  Future<List<ReceiptDraftStoreOption>> receiptImportStores() async {
+  Future<List<Store>> purchaseCreationStores() async {
     if (pendingStores case final pending?) return pending.future;
     return stores;
   }
 
   @override
-  Future<ReceiptImportConfirmation> createPurchaseFromReceiptDraft(
-    ReceiptDraft draft,
+  Future<PurchaseCreationResult> createFromCommand(
+    PurchaseCreationCommand command,
   ) async {
     createCalls++;
-    lastDraft = draft;
-    return ReceiptImportConfirmation(
+    lastCommand = command;
+    if (pendingCreation case final pending?) return pending.future;
+    return PurchaseCreationResult(
       purchaseId: 'purchase-widget',
-      total: draft.totals.total,
-      purchaseDate: draft.metadata.purchaseDate,
+      total: command.items.fold(
+        0,
+        (total, item) => total + item.quantity * item.unitPrice,
+      ),
+      purchaseDate: command.purchaseDate,
     );
   }
 }

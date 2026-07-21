@@ -37,6 +37,7 @@ class ReceiptOcrService {
     } on ReceiptOcrProviderException catch (error) {
       throw _mapProviderFailure(error);
     } on TimeoutException catch (error) {
+      await _cancelPendingRecognition();
       throw ReceiptOcrRecognitionFailed(
         'انتهت مهلة التعرف على النص. حاول مجددًا.',
         cause: error,
@@ -49,12 +50,22 @@ class ReceiptOcrService {
     }
   }
 
+  Future<void> dispose() => _cancelPendingRecognition();
+
+  Future<void> _cancelPendingRecognition() async {
+    if (_provider case final CancellableReceiptOcrProvider provider) {
+      try {
+        await provider.cancelPendingRecognitions();
+      } catch (_) {
+        // Cleanup must not replace the domain failure that triggered it.
+      }
+    }
+  }
+
   void _validateRequest(ReceiptOcrRequest request) {
     final image = request.image;
     if (image.bytes.isEmpty || image.width <= 0 || image.height <= 0) {
-      throw const ReceiptOcrImageUnreadable(
-        'صورة الإيصال غير قابلة للقراءة.',
-      );
+      throw const ReceiptOcrImageUnreadable('صورة الإيصال غير قابلة للقراءة.');
     }
     if (request.preferredLanguages.isEmpty) {
       throw const ReceiptOcrUnsupportedLanguage(
@@ -96,8 +107,10 @@ class ReceiptOcrService {
           ReceiptOcrPermissionDenied(error.message, cause: error.cause),
         ReceiptOcrProviderErrorCode.imageUnreadable =>
           ReceiptOcrImageUnreadable(error.message, cause: error.cause),
-        ReceiptOcrProviderErrorCode.noTextDetected =>
-          ReceiptOcrNoTextDetected(error.message, cause: error.cause),
+        ReceiptOcrProviderErrorCode.noTextDetected => ReceiptOcrNoTextDetected(
+            error.message,
+            cause: error.cause,
+          ),
         ReceiptOcrProviderErrorCode.providerUnavailable =>
           ReceiptOcrProviderUnavailable(error.message, cause: error.cause),
         ReceiptOcrProviderErrorCode.recognitionFailed =>

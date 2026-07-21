@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../application/receipt_ocr_service.dart';
@@ -12,11 +14,13 @@ class ReceiptOcrScreen extends StatefulWidget {
     super.key,
     required this.service,
     required this.request,
+    this.disposeService = false,
     this.onContinue,
   });
 
   final ReceiptOcrService service;
   final ReceiptOcrRequest request;
+  final bool disposeService;
   final ValueChanged<ReceiptOcrResult>? onContinue;
 
   @override
@@ -27,6 +31,12 @@ class _ReceiptOcrScreenState extends State<ReceiptOcrScreen> {
   ReceiptOcrViewStatus _status = ReceiptOcrViewStatus.loading;
   ReceiptOcrResult? _result;
   String? _errorMessage;
+
+  @override
+  void dispose() {
+    if (widget.disposeService) unawaited(widget.service.dispose());
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -124,10 +134,7 @@ class _OcrResultView extends StatelessWidget {
           ],
           const SizedBox(height: 16),
           for (var index = 0; index < result.blocks.length; index++)
-            _OcrBlockCard(
-              index: index + 1,
-              block: result.blocks[index],
-            ),
+            _OcrBlockCard(index: index + 1, block: result.blocks[index]),
         ],
       );
 }

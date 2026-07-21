@@ -1,25 +1,27 @@
 import '../../product_matching/domain/product_match_models.dart';
 import '../../product_matching/engine/text_normalizer.dart';
+import '../../purchase/application/purchase_creation_gateway.dart';
+import '../../purchase/domain/purchase_creation_command.dart';
 import '../../receipt_ocr/domain/receipt_ocr_result.dart';
 import '../domain/receipt_draft.dart';
 import '../domain/receipt_import_failure.dart';
-import 'receipt_purchase_gateway.dart';
 
 typedef ReceiptImportClock = DateTime Function();
 
 class ReceiptImportService {
   ReceiptImportService({
-    required ReceiptPurchaseGateway purchaseGateway,
+    required PurchaseCreationGateway purchaseGateway,
     ReceiptImportClock? clock,
     TextNormalizer normalizer = const TextNormalizer(),
   })  : _purchaseGateway = purchaseGateway,
         _clock = clock ?? DateTime.now,
         _normalizer = normalizer;
 
-  final ReceiptPurchaseGateway _purchaseGateway;
+  final PurchaseCreationGateway _purchaseGateway;
   final ReceiptImportClock _clock;
   final TextNormalizer _normalizer;
   int _idCounter = 0;
+  final Map<String, Future<ReceiptImportConfirmation>> _confirmations = {};
 
   Future<ReceiptDraftReview> prepareReview({
     required ReceiptOcrResult ocrResult,
@@ -30,8 +32,23 @@ class ReceiptImportService {
       throw const InvalidReceiptDraft('نتيجة OCR لا تحتوي على أسطر صالحة.');
     }
     try {
-      final products = _purchaseGateway.receiptImportProducts();
-      final stores = await _purchaseGateway.receiptImportStores();
+      final products = _purchaseGateway
+          .purchaseCreationProducts()
+          .map(
+            (product) => ReceiptDraftProductOption(
+              id: product.id,
+              name: product.name,
+              category: product.category,
+              unit: product.unit,
+            ),
+          )
+          .toList(growable: false);
+      final stores = (await _purchaseGateway.purchaseCreationStores())
+          .where((store) => store.isActive)
+          .map(
+            (store) => ReceiptDraftStoreOption(id: store.id, name: store.name),
+          )
+          .toList(growable: false);
       final productByName = {
         for (final product in products)
           _normalizer.normalize(product.name): product,
@@ -101,7 +118,7 @@ class ReceiptImportService {
         products: List.unmodifiable(products),
         stores: List.unmodifiable(stores),
       );
-    } on ReceiptPurchaseGatewayException catch (error) {
+    } on PurchaseCreationException catch (error) {
       throw _mapGatewayFailure(error);
     } on ReceiptImportFailure {
       rethrow;
@@ -118,6 +135,7 @@ class ReceiptImportService {
     String itemId,
     ReceiptDraftProductOption product,
   ) {
+    _ensureEditable(draft);
     final item = _item(draft, itemId);
     item
       ..productId = product.id
@@ -130,6 +148,7 @@ class ReceiptImportService {
     String itemId,
     ReceiptDraftProductCandidate candidate,
   ) {
+    _ensureEditable(draft);
     final item = _item(draft, itemId);
     item
       ..productId = candidate.productId
@@ -153,11 +172,13 @@ class ReceiptImportService {
   }
 
   void updateQuantity(ReceiptDraft draft, String itemId, double quantity) {
+    _ensureEditable(draft);
     _item(draft, itemId).quantity = quantity;
     _markModified(draft);
   }
 
   void updateUnitPrice(ReceiptDraft draft, String itemId, double unitPrice) {
+    _ensureEditable(draft);
     _item(draft, itemId).unitPrice = unitPrice;
     _markModified(draft);
   }
@@ -168,6 +189,7 @@ class ReceiptImportService {
     DateTime? purchaseDate,
     String? notes,
   }) {
+    _ensureEditable(draft);
     if (storeId != null) draft.metadata.storeId = _clean(storeId);
     if (purchaseDate != null) draft.metadata.purchaseDate = purchaseDate;
     if (notes != null) draft.metadata.notes = _clean(notes);
@@ -179,6 +201,7 @@ class ReceiptImportService {
     required double discount,
     required double tax,
   }) {
+    _ensureEditable(draft);
     draft
       ..discount = discount
       ..tax = tax;
@@ -186,6 +209,7 @@ class ReceiptImportService {
   }
 
   void removeItem(ReceiptDraft draft, String itemId) {
+    _ensureEditable(draft);
     final index = draft.items.indexWhere((item) => item.id == itemId);
     if (index < 0) throw const InvalidReceiptDraft('بند الإيصال غير موجود.');
     final removed = draft.items.removeAt(index);
@@ -203,6 +227,7 @@ class ReceiptImportService {
     double quantity = 1,
     double unitPrice = 0,
   }) {
+    _ensureEditable(draft);
     final item = ReceiptDraftItem(
       id: _newId('receipt-line'),
       sourceText: sourceText.trim().isEmpty ? 'بند مضاف يدويًا' : sourceText,
@@ -225,7 +250,7 @@ class ReceiptImportService {
     }
     if (draft.items.isEmpty) errors.add('أضف منتجًا واحدًا على الأقل.');
     final availableIds = _purchaseGateway
-        .receiptImportProducts()
+        .purchaseCreationProducts()
         .map((product) => product.id)
         .toSet();
     for (var index = 0; index < draft.items.length; index++) {
@@ -253,17 +278,70 @@ class ReceiptImportService {
     return List.unmodifiable(errors);
   }
 
-  Future<ReceiptImportConfirmation> confirm(ReceiptDraft draft) async {
-    if (draft.isCancelled) throw const ReceiptImportCancelled();
+  Future<ReceiptImportConfirmation> confirm(ReceiptDraft draft) {
+    final completed = draft.confirmation;
+    if (draft.confirmationStatus == ReceiptDraftConfirmationStatus.confirmed &&
+        completed != null) {
+      return Future.value(completed);
+    }
+    if (draft.isCancelled) {
+      return Future.error(const ReceiptImportCancelled());
+    }
+    final active = _confirmations[draft.id];
+    if (active != null) return active;
     final errors = validate(draft);
-    if (errors.isNotEmpty) throw ReceiptDraftValidationFailed(errors);
+    if (errors.isNotEmpty) {
+      return Future.error(ReceiptDraftValidationFailed(errors));
+    }
+    draft.confirmationStatus = ReceiptDraftConfirmationStatus.confirming;
+    late final Future<ReceiptImportConfirmation> operation;
+    operation = _confirm(draft).whenComplete(() {
+      if (identical(_confirmations[draft.id], operation)) {
+        _confirmations.remove(draft.id);
+      }
+    });
+    _confirmations[draft.id] = operation;
+    return operation;
+  }
+
+  Future<ReceiptImportConfirmation> _confirm(ReceiptDraft draft) async {
     try {
-      return await _purchaseGateway.createPurchaseFromReceiptDraft(draft);
-    } on ReceiptPurchaseGatewayException catch (error) {
+      final result = await _purchaseGateway.createFromCommand(
+        PurchaseCreationCommand(
+          requestId: draft.id,
+          storeId: draft.metadata.storeId ?? '',
+          purchaseDate: draft.metadata.purchaseDate,
+          items: [
+            for (final item in draft.items)
+              PurchaseCreationItem(
+                productId: item.productId ?? '',
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                expiryDate: item.expiryDate,
+              ),
+          ],
+          discount: draft.discount,
+          tax: draft.tax,
+          notes: draft.metadata.notes,
+        ),
+      );
+      final confirmation = ReceiptImportConfirmation(
+        purchaseId: result.purchaseId,
+        total: result.total,
+        purchaseDate: result.purchaseDate,
+      );
+      draft
+        ..confirmation = confirmation
+        ..confirmationStatus = ReceiptDraftConfirmationStatus.confirmed;
+      return confirmation;
+    } on PurchaseCreationException catch (error) {
+      draft.confirmationStatus = ReceiptDraftConfirmationStatus.failed;
       throw _mapGatewayFailure(error);
     } on ReceiptImportFailure {
+      draft.confirmationStatus = ReceiptDraftConfirmationStatus.failed;
       rethrow;
     } catch (error) {
+      draft.confirmationStatus = ReceiptDraftConfirmationStatus.failed;
       throw ReceiptPurchaseCreationFailed(
         'تعذر إنشاء عملية الشراء من الإيصال.',
         cause: error,
@@ -271,10 +349,24 @@ class ReceiptImportService {
     }
   }
 
-  void cancel(ReceiptDraft draft) {
+  bool cancel(ReceiptDraft draft) {
+    if (draft.confirmationStatus == ReceiptDraftConfirmationStatus.confirming ||
+        draft.confirmationStatus == ReceiptDraftConfirmationStatus.confirmed) {
+      return false;
+    }
     draft
-      ..isCancelled = true
+      ..confirmationStatus = ReceiptDraftConfirmationStatus.cancelled
       ..hasUserModifications = true;
+    return true;
+  }
+
+  void _ensureEditable(ReceiptDraft draft) {
+    if (draft.confirmationStatus != ReceiptDraftConfirmationStatus.ready &&
+        draft.confirmationStatus != ReceiptDraftConfirmationStatus.failed) {
+      throw const InvalidReceiptDraft(
+        'لا يمكن تعديل مسودة الإيصال في حالتها الحالية.',
+      );
+    }
   }
 
   ReceiptDraftItem _item(ReceiptDraft draft, String itemId) {
@@ -371,16 +463,19 @@ class ReceiptImportService {
     return clean.isEmpty ? null : clean;
   }
 
-  ReceiptImportFailure _mapGatewayFailure(
-    ReceiptPurchaseGatewayException error,
-  ) =>
+  ReceiptImportFailure _mapGatewayFailure(PurchaseCreationException error) =>
       switch (error.code) {
-        ReceiptPurchaseGatewayErrorCode.validation =>
-          ReceiptDraftValidationFailed([error.message]),
-        ReceiptPurchaseGatewayErrorCode.repository =>
-          ReceiptImportRepositoryFailure(error.message, cause: error.cause),
-        ReceiptPurchaseGatewayErrorCode.creation =>
-          ReceiptPurchaseCreationFailed(error.message, cause: error.cause),
+        PurchaseCreationErrorCode.validation => ReceiptDraftValidationFailed([
+            error.message,
+          ]),
+        PurchaseCreationErrorCode.repository => ReceiptImportRepositoryFailure(
+            error.message,
+            cause: error.cause,
+          ),
+        PurchaseCreationErrorCode.creation => ReceiptPurchaseCreationFailed(
+            error.message,
+            cause: error.cause,
+          ),
       };
 
   String _newId(String prefix) {

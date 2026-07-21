@@ -14,8 +14,6 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Create Android platform
-        run: flutter create --platforms=android --org com.moaid .
       - name: Install dependencies
         run: flutter pub get
       - name: Build APK

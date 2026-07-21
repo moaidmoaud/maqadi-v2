@@ -52,14 +52,12 @@ class PlatformReceiptImageCropper implements ReceiptImageCropper {
       '.${image.fileExtension}',
     );
     await sourceFile.writeAsBytes(image.bytes, flush: true);
+    CroppedFile? cropped;
     try {
-      final cropped = await _cropper.cropImage(
+      cropped = await _cropper.cropImage(
         sourcePath: sourceFile.path,
         uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'قص الإيصال',
-            lockAspectRatio: false,
-          ),
+          AndroidUiSettings(toolbarTitle: 'قص الإيصال', lockAspectRatio: false),
           IOSUiSettings(
             title: 'قص الإيصال',
             doneButtonTitle: 'تم',
@@ -74,8 +72,14 @@ class PlatformReceiptImageCropper implements ReceiptImageCropper {
         source: image.source,
       );
     } finally {
-      if (await sourceFile.exists()) {
-        await sourceFile.delete();
+      try {
+        final croppedPath = cropped?.path;
+        if (croppedPath != null && croppedPath != sourceFile.path) {
+          final croppedFile = File(croppedPath);
+          if (await croppedFile.exists()) await croppedFile.delete();
+        }
+      } finally {
+        if (await sourceFile.exists()) await sourceFile.delete();
       }
     }
   }

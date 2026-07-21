@@ -1,9 +1,13 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maqadi_v2/models/inventory_models.dart';
 import 'package:maqadi_v2/models/purchase_models.dart';
 import 'package:maqadi_v2/product_matching/domain/product_match_models.dart';
+import 'package:maqadi_v2/purchase/application/purchase_creation_gateway.dart';
+import 'package:maqadi_v2/purchase/domain/purchase_creation_command.dart';
 import 'package:maqadi_v2/receipt_import/application/receipt_import_service.dart';
-import 'package:maqadi_v2/receipt_import/application/receipt_purchase_gateway.dart';
 import 'package:maqadi_v2/receipt_import/domain/receipt_draft.dart';
 import 'package:maqadi_v2/receipt_import/domain/receipt_import_failure.dart';
 import 'package:maqadi_v2/receipt_ocr/domain/receipt_ocr_result.dart';
@@ -12,6 +16,14 @@ import 'package:maqadi_v2/services/inventory_service.dart';
 import 'package:maqadi_v2/services/purchase_service.dart';
 
 void main() {
+  test('PurchaseService has no dependency on receipt import types', () {
+    final source =
+        File('lib/services/purchase_service.dart').readAsStringSync();
+
+    expect(source, isNot(contains('receipt_import')));
+    expect(source, isNot(contains('ReceiptDraft')));
+  });
+
   group('ReceiptImportService', () {
     late _MockReceiptPurchaseGateway gateway;
     late ReceiptImportService service;
@@ -36,8 +48,8 @@ void main() {
       expect(review.draft.items.single.unitPrice, 0);
       expect(review.draft.unmatchedLines, ['Receipt total']);
       expect(review.draft.metadata.sourceLineCount, 2);
-      expect(review.products, gateway.products);
-      expect(review.stores, gateway.stores);
+      expect(review.products.map((product) => product.id), ['milk', 'bread']);
+      expect(review.stores.map((store) => store.id), ['store']);
       expect(review.draft.hasUserModifications, isFalse);
     });
 
@@ -59,29 +71,31 @@ void main() {
       final review = await _review(service);
       final item = review.draft.items.single;
 
-      service.selectProduct(review.draft, item.id, gateway.products.last);
+      service.selectProduct(review.draft, item.id, review.products.last);
 
       expect(item.productId, 'bread');
       expect(item.productName, 'Brown Bread');
       expect(gateway.createCalls, 0);
     });
 
-    test('candidate replacement uses the candidate selected by the user',
-        () async {
-      final review = await service.prepareReview(
-        ocrResult: _ocr(['Milk']),
-        matchResult: _matches([
-          _match('Milk', 'Milk', confidence: 0.9),
-          _match('Milk', 'Brown Bread', confidence: 0.8),
-        ]),
-      );
-      final item = review.draft.items.single;
+    test(
+      'candidate replacement uses the candidate selected by the user',
+      () async {
+        final review = await service.prepareReview(
+          ocrResult: _ocr(['Milk']),
+          matchResult: _matches([
+            _match('Milk', 'Milk', confidence: 0.9),
+            _match('Milk', 'Brown Bread', confidence: 0.8),
+          ]),
+        );
+        final item = review.draft.items.single;
 
-      service.selectCandidate(review.draft, item.id, item.candidates.last);
+        service.selectCandidate(review.draft, item.id, item.candidates.last);
 
-      expect(item.productId, 'bread');
-      expect(item.productName, 'Brown Bread');
-    });
+        expect(item.productId, 'bread');
+        expect(item.productName, 'Brown Bread');
+      },
+    );
 
     test('line removal preserves its OCR text as unmatched', () async {
       final review = await _review(service);
@@ -105,7 +119,7 @@ void main() {
 
       final added = service.addItem(
         review.draft,
-        product: gateway.products.first,
+        product: review.products.first,
         sourceText: 'Unknown',
         quantity: 2,
         unitPrice: 5,
@@ -117,24 +131,21 @@ void main() {
       expect(review.draft.totals.total, 10);
     });
 
-    test('generates unmatched, low confidence, and zero price warnings',
-        () async {
-      final review = await service.prepareReview(
-        ocrResult: _ocr(['Mlk', 'Footer']),
-        matchResult: _matches([
-          _match('Mlk', 'Milk', confidence: 0.7),
-        ]),
-      );
+    test(
+      'generates unmatched, low confidence, and zero price warnings',
+      () async {
+        final review = await service.prepareReview(
+          ocrResult: _ocr(['Mlk', 'Footer']),
+          matchResult: _matches([_match('Mlk', 'Milk', confidence: 0.7)]),
+        );
 
-      expect(
-        review.draft.warnings.map((warning) => warning.type).toSet(),
-        {
+        expect(review.draft.warnings.map((warning) => warning.type).toSet(), {
           ReceiptDraftWarningType.unmatchedLine,
           ReceiptDraftWarningType.lowConfidence,
           ReceiptDraftWarningType.zeroPrice,
-        },
-      );
-    });
+        });
+      },
+    );
 
     test('validates required store, product, quantity, and price', () async {
       final review = await _review(service);
@@ -166,16 +177,62 @@ void main() {
       expect(errors.join(' '), contains('الضريبة'));
     });
 
-    test('successful confirmation delegates the same draft to the gateway',
-        () async {
+    test(
+      'successful confirmation delegates the same draft to the gateway',
+      () async {
+        final review = await _validReview(service);
+
+        final confirmation = await service.confirm(review.draft);
+
+        expect(confirmation.purchaseId, 'purchase-1');
+        expect(gateway.lastCommand!.requestId, review.draft.id);
+        expect(gateway.lastCommand!.items.single.productId, 'milk');
+        expect(gateway.createCalls, 1);
+        expect(
+          review.draft.confirmationStatus,
+          ReceiptDraftConfirmationStatus.confirmed,
+        );
+      },
+    );
+
+    test('concurrent confirmation calls collapse into one operation', () async {
       final review = await _validReview(service);
+      gateway.pendingCreation = Completer<PurchaseCreationResult>();
 
-      final confirmation = await service.confirm(review.draft);
+      final first = service.confirm(review.draft);
+      final second = service.confirm(review.draft);
 
-      expect(confirmation.purchaseId, 'purchase-1');
-      expect(gateway.lastDraft, same(review.draft));
+      expect(identical(first, second), isTrue);
+      expect(gateway.createCalls, 1);
+      expect(
+        review.draft.confirmationStatus,
+        ReceiptDraftConfirmationStatus.confirming,
+      );
+      gateway.pendingCreation!.complete(
+        PurchaseCreationResult(
+          purchaseId: 'purchase-concurrent',
+          total: 5,
+          purchaseDate: review.draft.metadata.purchaseDate,
+        ),
+      );
+      expect((await first).purchaseId, 'purchase-concurrent');
+      expect((await second).purchaseId, 'purchase-concurrent');
       expect(gateway.createCalls, 1);
     });
+
+    test(
+      'retry after successful confirmation returns the original result',
+      () async {
+        final review = await _validReview(service);
+
+        final first = await service.confirm(review.draft);
+        final retried = await service.confirm(review.draft);
+
+        expect(retried, same(first));
+        expect(gateway.createCalls, 1);
+        expect(review.draft.confirmation, same(first));
+      },
+    );
 
     test('validation failure prevents PurchaseService invocation', () async {
       final review = await _review(service);
@@ -205,8 +262,8 @@ void main() {
     });
 
     test('maps repository and purchase creation failures', () async {
-      gateway.error = const ReceiptPurchaseGatewayException(
-        ReceiptPurchaseGatewayErrorCode.repository,
+      gateway.error = const PurchaseCreationException(
+        PurchaseCreationErrorCode.repository,
         'repository unavailable',
       );
       final review = await _validReview(service);
@@ -215,8 +272,8 @@ void main() {
         throwsA(isA<ReceiptImportRepositoryFailure>()),
       );
 
-      gateway.error = const ReceiptPurchaseGatewayException(
-        ReceiptPurchaseGatewayErrorCode.creation,
+      gateway.error = const PurchaseCreationException(
+        PurchaseCreationErrorCode.creation,
         'purchase failed',
       );
       await expectLater(
@@ -225,27 +282,29 @@ void main() {
       );
     });
 
-    test('maps review loading failures without leaking gateway exceptions',
-        () async {
-      gateway.loadError = const ReceiptPurchaseGatewayException(
-        ReceiptPurchaseGatewayErrorCode.repository,
-        'catalog unavailable',
-      );
+    test(
+      'maps review loading failures without leaking gateway exceptions',
+      () async {
+        gateway.loadError = const PurchaseCreationException(
+          PurchaseCreationErrorCode.repository,
+          'catalog unavailable',
+        );
 
-      await expectLater(
-        service.prepareReview(
-          ocrResult: _ocr(['Milk']),
-          matchResult: _matches([_match('Milk', 'Milk')]),
-        ),
-        throwsA(
-          isA<ReceiptImportRepositoryFailure>().having(
-            (failure) => failure.message,
-            'message',
-            'catalog unavailable',
+        await expectLater(
+          service.prepareReview(
+            ocrResult: _ocr(['Milk']),
+            matchResult: _matches([_match('Milk', 'Milk')]),
           ),
-        ),
-      );
-    });
+          throwsA(
+            isA<ReceiptImportRepositoryFailure>().having(
+              (failure) => failure.message,
+              'message',
+              'catalog unavailable',
+            ),
+          ),
+        );
+      },
+    );
 
     test('rejects an empty OCR result', () async {
       await expectLater(
@@ -371,52 +430,57 @@ MatchedProduct _match(
   );
 }
 
-class _MockReceiptPurchaseGateway implements ReceiptPurchaseGateway {
-  final List<ReceiptDraftProductOption> products = const [
-    ReceiptDraftProductOption(
+class _MockReceiptPurchaseGateway implements PurchaseCreationGateway {
+  final List<PurchaseProductOption> products = const [
+    PurchaseProductOption(
       id: 'milk',
       name: 'Milk',
       category: 'Dairy',
       unit: 'unit',
     ),
-    ReceiptDraftProductOption(
+    PurchaseProductOption(
       id: 'bread',
       name: 'Brown Bread',
       category: 'Bakery',
       unit: 'unit',
     ),
   ];
-  final List<ReceiptDraftStoreOption> stores = const [
-    ReceiptDraftStoreOption(id: 'store', name: 'Market'),
+  final List<Store> stores = [
+    Store(id: 'store', name: 'Market', createdAt: DateTime.utc(2026, 1, 1)),
   ];
   Object? loadError;
   Object? error;
-  ReceiptDraft? lastDraft;
+  PurchaseCreationCommand? lastCommand;
+  Completer<PurchaseCreationResult>? pendingCreation;
   int createCalls = 0;
 
   @override
-  List<ReceiptDraftProductOption> receiptImportProducts() {
+  List<PurchaseProductOption> purchaseCreationProducts() {
     if (loadError case final current?) throw current;
     return products;
   }
 
   @override
-  Future<List<ReceiptDraftStoreOption>> receiptImportStores() async {
+  Future<List<Store>> purchaseCreationStores() async {
     if (loadError case final current?) throw current;
     return stores;
   }
 
   @override
-  Future<ReceiptImportConfirmation> createPurchaseFromReceiptDraft(
-    ReceiptDraft draft,
+  Future<PurchaseCreationResult> createFromCommand(
+    PurchaseCreationCommand command,
   ) async {
     createCalls++;
-    lastDraft = draft;
+    lastCommand = command;
     if (error case final current?) throw current;
-    return ReceiptImportConfirmation(
+    if (pendingCreation case final pending?) return pending.future;
+    return PurchaseCreationResult(
       purchaseId: 'purchase-1',
-      total: draft.totals.total,
-      purchaseDate: draft.metadata.purchaseDate,
+      total: command.items.fold(
+        0,
+        (total, item) => total + item.quantity * item.unitPrice,
+      ),
+      purchaseDate: command.purchaseDate,
     );
   }
 }

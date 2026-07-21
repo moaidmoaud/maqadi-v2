@@ -1,5 +1,13 @@
 import '../../product_matching/domain/product_match_models.dart';
 
+enum ReceiptDraftConfirmationStatus {
+  ready,
+  confirming,
+  confirmed,
+  failed,
+  cancelled,
+}
+
 class ReceiptDraft {
   ReceiptDraft({
     required this.id,
@@ -11,7 +19,8 @@ class ReceiptDraft {
     this.discount = 0,
     this.tax = 0,
     this.hasUserModifications = false,
-    this.isCancelled = false,
+    this.confirmationStatus = ReceiptDraftConfirmationStatus.ready,
+    this.confirmation,
   })  : items = items ?? <ReceiptDraftItem>[],
         unmatchedLines = unmatchedLines ?? <String>[],
         totals = totals ?? const ReceiptDraftTotals.zero(),
@@ -26,7 +35,11 @@ class ReceiptDraft {
   double discount;
   double tax;
   bool hasUserModifications;
-  bool isCancelled;
+  ReceiptDraftConfirmationStatus confirmationStatus;
+  ReceiptImportConfirmation? confirmation;
+
+  bool get isCancelled =>
+      confirmationStatus == ReceiptDraftConfirmationStatus.cancelled;
 }
 
 class ReceiptDraftItem {
