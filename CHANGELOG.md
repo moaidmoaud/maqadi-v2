@@ -1,5 +1,18 @@
 # سجل التغييرات
 
+## Phase 7.1 — Consumption Engine
+
+### Consumption history
+- Added a provider-independent, read-only Consumption Engine that derives how products were consumed from existing inventory movements.
+- Added immutable consumption snapshots, events, profiles, results, explanations, and explicit failures without persistence or caching.
+- Added typed normalization that distinguishes recorded consumption from purchases, additions, adjustments, and batch removals.
+- Added a read-only Consumption screen with product selection, loading, empty and error states, refresh, history summaries, event history, and engine-generated explanations.
+
+### Architecture and quality
+- Added a single-capture `InventoryService` reader and one-pass movement grouping without `PurchaseRepository` or `SharedPreferences` access.
+- Documented RFC-002 and ADR-021 through ADR-025 in `docs/architecture/consumption-engine.md`.
+- Added event-builder, engine, service, presentation, architecture, deterministic, large-history, and no-write tests.
+
 ## Phase 7.0 — Inventory Health Engine
 
 ### Inventory health
