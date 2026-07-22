@@ -16,12 +16,14 @@ class ReceiptOcrScreen extends StatefulWidget {
     required this.request,
     this.disposeService = false,
     this.onContinue,
+    this.onInspectStructure,
   });
 
   final ReceiptOcrService service;
   final ReceiptOcrRequest request;
   final bool disposeService;
   final ValueChanged<ReceiptOcrResult>? onContinue;
+  final ValueChanged<ReceiptOcrResult>? onInspectStructure;
 
   @override
   State<ReceiptOcrScreen> createState() => _ReceiptOcrScreenState();
@@ -75,6 +77,7 @@ class _ReceiptOcrScreenState extends State<ReceiptOcrScreen> {
             ReceiptOcrViewStatus.success => _OcrResultView(
                 result: _result!,
                 onContinue: widget.onContinue,
+                onInspectStructure: widget.onInspectStructure,
               ),
             ReceiptOcrViewStatus.error => _OcrErrorView(
                 message: _errorMessage!,
@@ -102,10 +105,15 @@ class _OcrLoadingView extends StatelessWidget {
 }
 
 class _OcrResultView extends StatelessWidget {
-  const _OcrResultView({required this.result, this.onContinue});
+  const _OcrResultView({
+    required this.result,
+    this.onContinue,
+    this.onInspectStructure,
+  });
 
   final ReceiptOcrResult result;
   final ValueChanged<ReceiptOcrResult>? onContinue;
+  final ValueChanged<ReceiptOcrResult>? onInspectStructure;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -123,6 +131,15 @@ class _OcrResultView extends StatelessWidget {
             result.text,
             key: const ValueKey('receipt-ocr-result-text'),
           ),
+          if (onInspectStructure != null) ...[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              key: const ValueKey('open-receipt-understanding-debug'),
+              onPressed: () => onInspectStructure!(result),
+              icon: const Icon(Icons.account_tree_outlined),
+              label: const Text('عرض بنية الإيصال'),
+            ),
+          ],
           if (onContinue != null) ...[
             const SizedBox(height: 16),
             FilledButton.icon(

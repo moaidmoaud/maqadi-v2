@@ -22,6 +22,8 @@ import 'receipt_ocr/application/receipt_ocr_service.dart';
 import 'receipt_ocr/domain/receipt_ocr_request.dart';
 import 'receipt_ocr/infrastructure/ml_kit/ml_kit_receipt_ocr_provider.dart';
 import 'receipt_ocr/presentation/receipt_ocr_screen.dart';
+import 'receipt_understanding/application/receipt_understanding_service.dart';
+import 'receipt_understanding/presentation/receipt_understanding_debug_screen.dart';
 import 'receipt_import/application/receipt_import_service.dart';
 import 'receipt_import/presentation/receipt_review_screen.dart';
 import 'screens/batch_management_screen.dart';
@@ -369,6 +371,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       request: ReceiptOcrRequest(image: image),
                       disposeService: true,
+                      onInspectStructure: (ocrResult) {
+                        Navigator.push<void>(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => ReceiptUnderstandingDebugScreen(
+                              service: const ReceiptUnderstandingService(),
+                              ocrResult: ocrResult,
+                            ),
+                          ),
+                        );
+                      },
                       onContinue: (ocrResult) {
                         Navigator.pushReplacement(
                           context,

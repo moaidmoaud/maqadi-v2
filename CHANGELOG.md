@@ -1,5 +1,18 @@
 # سجل التغييرات
 
+## Phase 8.0 — Receipt Understanding Engine
+
+### Receipt structure
+- Added a provider-independent, deterministic Receipt Understanding Engine that classifies each OCR block into exactly one of eleven structural element types without splitting or merging blocks.
+- Added canonical spatial ordering, top/body/footer zones, Arabic and English structural normalization, retailer-agnostic structural dictionaries, and fixed classification precedence.
+- Added immutable classification evidence with nullable OCR confidence and geometry, deterministic unsigned FNV-1a element identifiers, and safe handling of missing OCR metadata.
+- Added a read-only debug screen for original OCR blocks, classified elements, type filtering, confidence and evidence inspection, and bounding-box overlays.
+
+### Architecture and quality
+- Kept receipt understanding isolated from products, matching, purchases, inventory, shopping, repositories, and business dictionaries; OCR results enter only through `ReceiptUnderstandingService`.
+- Documented RFC-005 and ADR-030/ADR-031 in `docs/architecture/receipt-understanding-engine.md`.
+- Added 48 engine, service, presentation, architecture, ordering, determinism, failure-mapping, mixed-language, and large-receipt tests.
+
 ## Phase 7.3 — Shopping Recommendation Engine
 
 ### Shopping recommendations
