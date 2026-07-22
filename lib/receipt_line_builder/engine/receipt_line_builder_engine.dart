@@ -106,13 +106,16 @@ class ReceiptLineBuilderEngine {
     final spatial =
         _spatialIndex.organizeWithTrace(geometries, medianHeight, _policy);
     final lines = <ReceiptLine>[];
+    final decisionTraces = <ReceiptAnchorDecisionTrace>[];
     for (final row in spatial.rows) {
       for (final column in row.columns) {
-        lines.addAll(_buildColumn(
+        final columnResult = _buildColumn(
           row: row,
           column: column,
           medianHeight: medianHeight,
-        ));
+        );
+        lines.addAll(columnResult.lines);
+        decisionTraces.addAll(columnResult.decisionTraces);
       }
     }
     return ReceiptLineResult(
@@ -125,6 +128,7 @@ class ReceiptLineBuilderEngine {
         medianHeight: medianHeight,
         spatial: spatial,
         missingGeometryIds: missingGeometryIds,
+        decisionTraces: decisionTraces,
       ),
     );
   }
@@ -135,6 +139,7 @@ class ReceiptLineBuilderEngine {
     required double? medianHeight,
     required ReceiptSpatialIndexResult? spatial,
     required List<String> missingGeometryIds,
+    Iterable<ReceiptAnchorDecisionTrace> decisionTraces = const [],
   }) =>
       ReceiptLineDebugTrace(
         calibrationPolicy: _policy,
@@ -184,9 +189,10 @@ class ReceiptLineBuilderEngine {
               reasonCode: value.reasonCode.name,
             ),
         ],
+        decisionTraces: decisionTraces,
       );
 
-  List<ReceiptLine> _buildColumn({
+  _ColumnBuildResult _buildColumn({
     required ReceiptSpatialRow row,
     required ReceiptSpatialColumn column,
     required double medianHeight,
@@ -199,10 +205,13 @@ class ReceiptLineBuilderEngine {
         .where((value) => value.element.type != ReceiptElementType.productName)
         .toList(growable: false);
     if (anchors.isEmpty) {
-      return List.unmodifiable([
-        for (final candidate in candidates)
-          _orphan(candidate, row.index, column.index),
-      ]);
+      return _ColumnBuildResult(
+        lines: [
+          for (final candidate in candidates)
+            _orphan(candidate, row.index, column.index),
+        ],
+        decisionTraces: const [],
+      );
     }
 
     final unclaimed = <String, ReceiptLineGeometry>{
@@ -219,7 +228,18 @@ class ReceiptLineBuilderEngine {
           .where((candidate) => candidate.element.type == role)
           .toList(growable: false);
       for (final candidate in roleCandidates) {
-        final draft = _nearestAnchor(candidate, anchors, medianHeight);
+        final selection = _nearestAnchor(candidate, anchors, medianHeight);
+        for (final draft in selection.consideredAnchors) {
+          if (!identical(draft, selection.selected)) {
+            draft.recordAlternateAnchorCandidate(
+              candidate: candidate,
+              medianHeight: medianHeight,
+              rowIndex: row.index,
+              columnIndex: column.index,
+            );
+          }
+        }
+        final draft = selection.selected;
         final displaced = draft.attach(
           role: role,
           candidate: candidate,
@@ -233,16 +253,25 @@ class ReceiptLineBuilderEngine {
       }
     }
 
-    return List.unmodifiable([
-      for (final draft in anchors)
-        draft.toLine(_idGenerator, row.index, column.index),
+    final lines = <ReceiptLine>[];
+    final decisionTraces = <ReceiptAnchorDecisionTrace>[];
+    for (final draft in anchors) {
+      final line = draft.toLine(_idGenerator, row.index, column.index);
+      lines.add(line);
+      decisionTraces.add(draft.toDecisionTrace(line.id));
+    }
+    lines.addAll([
       for (final candidate in candidates)
         if (unclaimed.containsKey(candidate.element.id))
           _orphan(candidate, row.index, column.index),
     ]);
+    return _ColumnBuildResult(
+      lines: lines,
+      decisionTraces: decisionTraces,
+    );
   }
 
-  _LineDraft _nearestAnchor(
+  _AnchorSelection _nearestAnchor(
     ReceiptLineGeometry candidate,
     List<_LineDraft> anchors,
     double medianHeight,
@@ -270,7 +299,10 @@ class ReceiptLineBuilderEngine {
             : left.anchor.element.id.compareTo(right.anchor.element.id) <= 0
                 ? left
                 : right;
-    return selected;
+    return _AnchorSelection(
+      selected: selected,
+      consideredAnchors: identical(left, right) ? [left] : [left, right],
+    );
   }
 
   double _distance(
@@ -364,6 +396,25 @@ class _LineDraft {
   final Map<String, double> _overlaps = {};
   final Map<String, String> _columns = {};
   final Map<String, String> _rejected = {};
+  final List<_CandidateDecisionDraft> _candidateEvaluations = [];
+  final Map<String, _CandidateDecisionDraft> _selectedEvaluations = {};
+  int _nextEvaluationOrder = 0;
+
+  void recordAlternateAnchorCandidate({
+    required ReceiptLineGeometry candidate,
+    required double medianHeight,
+    required int rowIndex,
+    required int columnIndex,
+  }) {
+    _recordCandidate(
+      candidate: candidate,
+      medianHeight: medianHeight,
+      rowIndex: rowIndex,
+      columnIndex: columnIndex,
+      accepted: false,
+      reason: ReceiptCandidateDecisionReason.nearerAlternateAnchor,
+    );
+  }
 
   ReceiptLineGeometry? attach({
     required ReceiptElementType role,
@@ -376,10 +427,25 @@ class _LineDraft {
     if (existing != null &&
         _score(existing, medianHeight) <= _score(candidate, medianHeight)) {
       _rejected[candidate.element.id] = 'farther-from-product-anchor';
+      _recordCandidate(
+        candidate: candidate,
+        medianHeight: medianHeight,
+        rowIndex: rowIndex,
+        columnIndex: columnIndex,
+        accepted: false,
+        reason: ReceiptCandidateDecisionReason.fartherFromProductAnchor,
+      );
       return candidate;
     }
     if (existing != null) {
       _rejected[existing.element.id] = 'replaced-by-nearer-spatial-candidate';
+      final displacedTrace = _selectedEvaluations[existing.element.id];
+      if (displacedTrace != null) {
+        displacedTrace
+          ..accepted = false
+          ..decisionReason =
+              ReceiptCandidateDecisionReason.replacedByNearerSpatialCandidate;
+      }
       _removeMetrics(existing.element.id);
     }
     _attached[role] = candidate;
@@ -390,7 +456,41 @@ class _LineDraft {
         candidate.normalizedHorizontalDistance(anchor, medianHeight);
     _overlaps[id] = candidate.verticalOverlap(anchor);
     _columns[id] = 'row:$rowIndex,column:$columnIndex';
+    _selectedEvaluations[id] = _recordCandidate(
+      candidate: candidate,
+      medianHeight: medianHeight,
+      rowIndex: rowIndex,
+      columnIndex: columnIndex,
+      accepted: true,
+      reason: ReceiptCandidateDecisionReason.accepted,
+    );
     return existing;
+  }
+
+  _CandidateDecisionDraft _recordCandidate({
+    required ReceiptLineGeometry candidate,
+    required double medianHeight,
+    required int rowIndex,
+    required int columnIndex,
+    required bool accepted,
+    required ReceiptCandidateDecisionReason reason,
+  }) {
+    final value = _CandidateDecisionDraft(
+      candidate: candidate,
+      evaluationOrder: _nextEvaluationOrder++,
+      accepted: accepted,
+      decisionReason: reason,
+      rowIndex: rowIndex,
+      columnIndex: columnIndex,
+      horizontalGap:
+          candidate.normalizedHorizontalDistance(anchor, medianHeight),
+      verticalDistance:
+          candidate.normalizedVerticalDistance(anchor, medianHeight),
+      verticalOverlap: candidate.verticalOverlap(anchor),
+      spatialScore: _score(candidate, medianHeight),
+    );
+    _candidateEvaluations.add(value);
+    return value;
   }
 
   double _score(ReceiptLineGeometry value, double medianHeight) =>
@@ -457,4 +557,92 @@ class _LineDraft {
       ),
     );
   }
+
+  ReceiptAnchorDecisionTrace toDecisionTrace(String lineId) =>
+      ReceiptAnchorDecisionTrace(
+        lineId: lineId,
+        anchorElementId: anchor.element.id,
+        candidateEvaluations: [
+          for (final value in _candidateEvaluations) value.toTrace(),
+        ],
+      );
+}
+
+class _ColumnBuildResult {
+  _ColumnBuildResult({
+    required Iterable<ReceiptLine> lines,
+    required Iterable<ReceiptAnchorDecisionTrace> decisionTraces,
+  })  : lines = List.unmodifiable(lines),
+        decisionTraces = List.unmodifiable(decisionTraces);
+
+  final List<ReceiptLine> lines;
+  final List<ReceiptAnchorDecisionTrace> decisionTraces;
+}
+
+class _AnchorSelection {
+  const _AnchorSelection({
+    required this.selected,
+    required this.consideredAnchors,
+  });
+
+  final _LineDraft selected;
+  final List<_LineDraft> consideredAnchors;
+}
+
+class _CandidateDecisionDraft {
+  _CandidateDecisionDraft({
+    required this.candidate,
+    required this.evaluationOrder,
+    required this.accepted,
+    required this.decisionReason,
+    required this.rowIndex,
+    required this.columnIndex,
+    required this.horizontalGap,
+    required this.verticalDistance,
+    required this.verticalOverlap,
+    required this.spatialScore,
+  });
+
+  final ReceiptLineGeometry candidate;
+  final int evaluationOrder;
+  bool accepted;
+  ReceiptCandidateDecisionReason decisionReason;
+  final int rowIndex;
+  final int columnIndex;
+  final double horizontalGap;
+  final double verticalDistance;
+  final double verticalOverlap;
+  final double spatialScore;
+
+  ReceiptCandidateDecisionTrace toTrace() => ReceiptCandidateDecisionTrace(
+        candidateElementId: candidate.element.id,
+        candidateType: _candidateType(candidate.element.type),
+        evaluationOrder: evaluationOrder,
+        accepted: accepted,
+        decisionReason: decisionReason,
+        sameRow: true,
+        sameColumn: true,
+        rowIndex: rowIndex,
+        columnIndex: columnIndex,
+        horizontalGap: horizontalGap,
+        verticalDistance: verticalDistance,
+        verticalOverlap: verticalOverlap,
+        spatialScore: spatialScore,
+      );
+
+  ReceiptLineCandidateType _candidateType(ReceiptElementType type) =>
+      switch (type) {
+        ReceiptElementType.productName => ReceiptLineCandidateType.productName,
+        ReceiptElementType.price => ReceiptLineCandidateType.price,
+        ReceiptElementType.quantity => ReceiptLineCandidateType.quantity,
+        ReceiptElementType.discount => ReceiptLineCandidateType.discount,
+        ReceiptElementType.tax => ReceiptLineCandidateType.tax,
+        ReceiptElementType.total => ReceiptLineCandidateType.lineTotal,
+        ReceiptElementType.unknown ||
+        ReceiptElementType.storeName ||
+        ReceiptElementType.header ||
+        ReceiptElementType.metadata ||
+        ReceiptElementType.footer =>
+          ReceiptLineCandidateType.unsupported,
+      };
 }

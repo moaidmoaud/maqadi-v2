@@ -235,6 +235,7 @@ class _ReceiptLineBuilderDebugScreenState
                   'completeness=${_label(value.completeness)}',
           },
         ),
+        _DecisionTraceSection(traces: trace.decisionTraces),
         _TraceSection(
           title: 'Unassigned elements',
           rows: {
@@ -430,6 +431,70 @@ class _TraceSection extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 2),
                   child: Text('${entry.key}: ${entry.value}'),
                 ),
+            ],
+          ),
+        ),
+      );
+}
+
+class _DecisionTraceSection extends StatelessWidget {
+  const _DecisionTraceSection({required this.traces});
+
+  final List<ReceiptAnchorDecisionTrace> traces;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        key: const ValueKey('receipt-line-decision-trace'),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Decision Trace',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              if (traces.isEmpty) const Text('None'),
+              for (final trace in traces) ...[
+                Text(
+                  'Line ${trace.lineId} · Anchor ${trace.anchorElementId}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                if (trace.candidateEvaluations.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Text('No candidates evaluated.'),
+                  ),
+                for (final candidate in trace.candidateEvaluations)
+                  Padding(
+                    key: ValueKey(
+                      'candidate-decision-${trace.anchorElementId}-'
+                      '${candidate.candidateElementId}-'
+                      '${candidate.evaluationOrder}',
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      '#${candidate.evaluationOrder} '
+                      '${candidate.candidateElementId} '
+                      '(${candidate.candidateType.name}) · '
+                      '${candidate.accepted ? 'ACCEPTED' : 'REJECTED'} · '
+                      '${candidate.decisionReason.name} · '
+                      'sameRow=${candidate.sameRow}, '
+                      'sameColumn=${candidate.sameColumn}, '
+                      'row=${candidate.rowIndex}, '
+                      'column=${candidate.columnIndex}, '
+                      'horizontalGap='
+                      '${candidate.horizontalGap.toStringAsFixed(3)}, '
+                      'verticalDistance='
+                      '${candidate.verticalDistance.toStringAsFixed(3)}, '
+                      'verticalOverlap='
+                      '${candidate.verticalOverlap.toStringAsFixed(3)}, '
+                      'score=${candidate.spatialScore.toStringAsFixed(3)}',
+                    ),
+                  ),
+                const Divider(),
+              ],
             ],
           ),
         ),

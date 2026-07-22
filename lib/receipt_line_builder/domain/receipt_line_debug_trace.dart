@@ -72,6 +72,126 @@ class ReceiptLineRoleTrace {
   final Map<String, String> rejectedCandidates;
 }
 
+enum ReceiptCandidateDecisionReason {
+  accepted,
+  nearerAlternateAnchor,
+  fartherFromProductAnchor,
+  replacedByNearerSpatialCandidate,
+}
+
+enum ReceiptLineCandidateType {
+  productName,
+  price,
+  quantity,
+  discount,
+  tax,
+  lineTotal,
+  unsupported,
+}
+
+class ReceiptCandidateDecisionTrace {
+  const ReceiptCandidateDecisionTrace({
+    required this.candidateElementId,
+    required this.candidateType,
+    required this.evaluationOrder,
+    required this.accepted,
+    required this.decisionReason,
+    required this.sameRow,
+    required this.sameColumn,
+    required this.rowIndex,
+    required this.columnIndex,
+    required this.horizontalGap,
+    required this.verticalDistance,
+    required this.verticalOverlap,
+    required this.spatialScore,
+  });
+
+  factory ReceiptCandidateDecisionTrace.fromJson(
+    Map<String, Object?> json,
+  ) =>
+      ReceiptCandidateDecisionTrace(
+        candidateElementId: json['candidateElementId']! as String,
+        candidateType: ReceiptLineCandidateType.values.byName(
+          json['candidateType']! as String,
+        ),
+        evaluationOrder: json['evaluationOrder']! as int,
+        accepted: json['accepted']! as bool,
+        decisionReason: ReceiptCandidateDecisionReason.values.byName(
+          json['decisionReason']! as String,
+        ),
+        sameRow: json['sameRow']! as bool,
+        sameColumn: json['sameColumn']! as bool,
+        rowIndex: json['rowIndex']! as int,
+        columnIndex: json['columnIndex']! as int,
+        horizontalGap: (json['horizontalGap']! as num).toDouble(),
+        verticalDistance: (json['verticalDistance']! as num).toDouble(),
+        verticalOverlap: (json['verticalOverlap']! as num).toDouble(),
+        spatialScore: (json['spatialScore']! as num).toDouble(),
+      );
+
+  final String candidateElementId;
+  final ReceiptLineCandidateType candidateType;
+  final int evaluationOrder;
+  final bool accepted;
+  final ReceiptCandidateDecisionReason decisionReason;
+  final bool sameRow;
+  final bool sameColumn;
+  final int rowIndex;
+  final int columnIndex;
+  final double horizontalGap;
+  final double verticalDistance;
+  final double verticalOverlap;
+  final double spatialScore;
+
+  Map<String, Object> toJson() => {
+        'candidateElementId': candidateElementId,
+        'candidateType': candidateType.name,
+        'evaluationOrder': evaluationOrder,
+        'accepted': accepted,
+        'decisionReason': decisionReason.name,
+        'sameRow': sameRow,
+        'sameColumn': sameColumn,
+        'rowIndex': rowIndex,
+        'columnIndex': columnIndex,
+        'horizontalGap': horizontalGap,
+        'verticalDistance': verticalDistance,
+        'verticalOverlap': verticalOverlap,
+        'spatialScore': spatialScore,
+      };
+}
+
+class ReceiptAnchorDecisionTrace {
+  ReceiptAnchorDecisionTrace({
+    required this.lineId,
+    required this.anchorElementId,
+    required Iterable<ReceiptCandidateDecisionTrace> candidateEvaluations,
+  }) : candidateEvaluations = List.unmodifiable(candidateEvaluations);
+
+  factory ReceiptAnchorDecisionTrace.fromJson(Map<String, Object?> json) =>
+      ReceiptAnchorDecisionTrace(
+        lineId: json['lineId']! as String,
+        anchorElementId: json['anchorElementId']! as String,
+        candidateEvaluations:
+            (json['candidateEvaluations']! as List<Object?>).map(
+          (value) => ReceiptCandidateDecisionTrace.fromJson(
+            value! as Map<String, Object?>,
+          ),
+        ),
+      );
+
+  final String lineId;
+  final String anchorElementId;
+  final List<ReceiptCandidateDecisionTrace> candidateEvaluations;
+
+  Map<String, Object> toJson() => {
+        'lineId': lineId,
+        'anchorElementId': anchorElementId,
+        'candidateEvaluations': [
+          for (final value in candidateEvaluations) value.toJson(),
+        ],
+      };
+}
+
 class ReceiptUnassignedElementTrace {
   const ReceiptUnassignedElementTrace({
     required this.elementId,
@@ -94,6 +214,7 @@ class ReceiptLineDebugTrace {
     required Iterable<String> productAnchorIds,
     required Iterable<ReceiptLineRoleTrace> lineRoles,
     required Iterable<ReceiptUnassignedElementTrace> unassignedElements,
+    Iterable<ReceiptAnchorDecisionTrace> decisionTraces = const [],
   })  : canonicalElementOrder = List.unmodifiable(canonicalElementOrder),
         elementPlacements = List.unmodifiable(elementPlacements),
         rowDecisions = List.unmodifiable(rowDecisions),
@@ -101,7 +222,8 @@ class ReceiptLineDebugTrace {
         completenessCounts = Map.unmodifiable(completenessCounts),
         productAnchorIds = List.unmodifiable(productAnchorIds),
         lineRoles = List.unmodifiable(lineRoles),
-        unassignedElements = List.unmodifiable(unassignedElements);
+        unassignedElements = List.unmodifiable(unassignedElements),
+        decisionTraces = List.unmodifiable(decisionTraces);
 
   final ReceiptCalibrationPolicy calibrationPolicy;
   final double? medianPositiveElementHeight;
@@ -113,4 +235,5 @@ class ReceiptLineDebugTrace {
   final List<String> productAnchorIds;
   final List<ReceiptLineRoleTrace> lineRoles;
   final List<ReceiptUnassignedElementTrace> unassignedElements;
+  final List<ReceiptAnchorDecisionTrace> decisionTraces;
 }

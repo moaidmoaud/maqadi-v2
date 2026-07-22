@@ -120,15 +120,52 @@ void main() {
     expect(find.text('Partial: 1'), findsOneWidget);
     expect(find.text('Orphan: 1'), findsOneWidget);
 
-    await tester.drag(
-      find.byKey(const ValueKey('receipt-line-spatial-trace')),
-      const Offset(0, -650),
+    await tester.scrollUntilVisible(
+      find.text('Row decisions'),
+      400,
+      scrollable: find.byType(Scrollable).last,
     );
     await tester.pumpAndSettle();
     expect(find.text('Row decisions'), findsOneWidget);
     expect(find.text('Column decisions'), findsOneWidget);
     expect(find.textContaining('JOIN, vertical=0.000'), findsOneWidget);
     expect(find.textContaining('SPLIT, gap=11.000'), findsOneWidget);
+  });
+
+  testWidgets('renders accepted and rejected candidate decision traces',
+      (tester) async {
+    final traced = const ReceiptLineBuilderEngine().build([
+      receiptElement('product', ReceiptElementType.productName, width: 40),
+      receiptElement('near', ReceiptElementType.price, x: 45),
+      receiptElement('far', ReceiptElementType.price, x: 70),
+    ]);
+    await tester.pumpWidget(app(_QueuedService([Future.value(traced)])));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(-500, 0),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Spatial trace'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Decision Trace'),
+      500,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('receipt-line-decision-trace')),
+        findsOneWidget);
+    expect(find.textContaining('Anchor product'), findsOneWidget);
+    expect(find.textContaining('near (price) · ACCEPTED · accepted'),
+        findsOneWidget);
+    expect(
+      find.textContaining('far (price) · REJECTED · fartherFromProductAnchor'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('horizontalGap=0.500'), findsOneWidget);
+    expect(find.textContaining('verticalOverlap=1.000'), findsWidgets);
   });
 
   testWidgets('shows service errors and retries', (tester) async {

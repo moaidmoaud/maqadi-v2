@@ -138,6 +138,123 @@ void main() {
     expect(() => trace.lineRoles.single.roleElementIds.clear(),
         throwsUnsupportedError);
   });
+
+  test('accepted candidate trace exposes the passing metrics', () {
+    final trace = engine.build([
+      receiptElement('product', ReceiptElementType.productName, width: 40),
+      receiptElement('price', ReceiptElementType.price, x: 45),
+    ]).debugTrace!;
+
+    final anchor = trace.decisionTraces.single;
+    final candidate = anchor.candidateEvaluations.single;
+    expect(anchor.anchorElementId, 'product');
+    expect(candidate.candidateElementId, 'price');
+    expect(candidate.candidateType, ReceiptLineCandidateType.price);
+    expect(candidate.evaluationOrder, 0);
+    expect(candidate.accepted, isTrue);
+    expect(candidate.decisionReason, ReceiptCandidateDecisionReason.accepted);
+    expect(candidate.sameRow, isTrue);
+    expect(candidate.sameColumn, isTrue);
+    expect(candidate.rowIndex, 0);
+    expect(candidate.columnIndex, 0);
+    expect(candidate.horizontalGap, 0.5);
+    expect(candidate.verticalDistance, 0);
+    expect(candidate.verticalOverlap, 1);
+    expect(candidate.spatialScore, -0.5);
+  });
+
+  test('rejected candidate trace exposes the failing decision', () {
+    final trace = engine.build([
+      receiptElement('product', ReceiptElementType.productName, width: 40),
+      receiptElement('near', ReceiptElementType.price, x: 45),
+      receiptElement('far', ReceiptElementType.price, x: 70),
+    ]).debugTrace!;
+
+    final evaluations = trace.decisionTraces.single.candidateEvaluations;
+    expect(evaluations.map((value) => value.evaluationOrder), [0, 1]);
+    expect(evaluations.first.accepted, isTrue);
+    expect(evaluations.last.accepted, isFalse);
+    expect(
+      evaluations.last.decisionReason,
+      ReceiptCandidateDecisionReason.fartherFromProductAnchor,
+    );
+    expect(evaluations.last.horizontalGap, 3);
+    expect(evaluations.last.spatialScore, 2);
+  });
+
+  test('trace records alternate-anchor and replacement decisions', () {
+    final alternate = engine.build([
+      receiptElement('left-product', ReceiptElementType.productName, width: 40),
+      receiptElement('price', ReceiptElementType.price, x: 45),
+      receiptElement(
+        'right-product',
+        ReceiptElementType.productName,
+        x: 100,
+        width: 40,
+      ),
+    ]).debugTrace!;
+    final rightAnchor = alternate.decisionTraces.singleWhere(
+      (value) => value.anchorElementId == 'right-product',
+    );
+    expect(
+      rightAnchor.candidateEvaluations.single.decisionReason,
+      ReceiptCandidateDecisionReason.nearerAlternateAnchor,
+    );
+
+    final replacement = engine.build([
+      receiptElement('far', ReceiptElementType.price, x: 0),
+      receiptElement(
+        'product',
+        ReceiptElementType.productName,
+        x: 100,
+        width: 40,
+      ),
+      receiptElement('near', ReceiptElementType.price, x: 145),
+    ]).debugTrace!;
+    final evaluations = replacement.decisionTraces.single.candidateEvaluations;
+    expect(
+      evaluations.first.decisionReason,
+      ReceiptCandidateDecisionReason.replacedByNearerSpatialCandidate,
+    );
+    expect(evaluations.first.accepted, isFalse);
+    expect(evaluations.last.decisionReason,
+        ReceiptCandidateDecisionReason.accepted);
+    expect(evaluations.last.accepted, isTrue);
+  });
+
+  test('decision reasons are strongly typed and stable', () {
+    expect(
+      ReceiptCandidateDecisionReason.values.map((value) => value.name),
+      [
+        'accepted',
+        'nearerAlternateAnchor',
+        'fartherFromProductAnchor',
+        'replacedByNearerSpatialCandidate',
+      ],
+    );
+  });
+
+  test('anchor decision trace serializes and restores all evidence', () {
+    final original = engine
+        .build([
+          receiptElement('product', ReceiptElementType.productName, width: 40),
+          receiptElement('price', ReceiptElementType.price, x: 45),
+        ])
+        .debugTrace!
+        .decisionTraces
+        .single;
+
+    final json = original.toJson();
+    final restored = ReceiptAnchorDecisionTrace.fromJson(json);
+
+    expect(restored.toJson(), json);
+    expect(restored.lineId, original.lineId);
+    expect(restored.anchorElementId, original.anchorElementId);
+    expect(
+      restored.candidateEvaluations.single.decisionReason,
+      ReceiptCandidateDecisionReason.accepted,
+    );
+  });
 }
 
 List<List<List<String>>> _rows(List<ReceiptSpatialRow> rows) => [
@@ -176,5 +293,26 @@ List<Object?> _signature(ReceiptLineDebugTrace trace) => [
           value.normalizedHorizontalGap,
           value.split,
           value.resultingColumnIndex,
+        ],
+      for (final anchor in trace.decisionTraces)
+        [
+          anchor.lineId,
+          anchor.anchorElementId,
+          for (final candidate in anchor.candidateEvaluations)
+            [
+              candidate.candidateElementId,
+              candidate.candidateType,
+              candidate.evaluationOrder,
+              candidate.accepted,
+              candidate.decisionReason,
+              candidate.sameRow,
+              candidate.sameColumn,
+              candidate.rowIndex,
+              candidate.columnIndex,
+              candidate.horizontalGap,
+              candidate.verticalDistance,
+              candidate.verticalOverlap,
+              candidate.spatialScore,
+            ],
         ],
     ];

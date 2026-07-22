@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## RC-1.3 — Receipt Line Decision Trace Audit
+
+### Internal decision diagnostics
+- Added immutable per-anchor candidate evaluation traces with typed final reasons, stable evaluation order, accepted/rejected outcomes, element roles, row/column placement, and every spatial metric used by attachment selection.
+- Added JSON-safe serialization for decision traces and a read-only Decision Trace section in the existing Receipt Line Builder debug screen.
+- Preserved all Receipt Line grouping order, thresholds, calibration values, outputs, benchmark behavior, Receipt Understanding, and Product Matching flows.
+
 ## RC-1.2 — Receipt Line Runtime Debug Integration
 
 ### Internal runtime diagnostics
