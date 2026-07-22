@@ -4,6 +4,7 @@ import '../../receipt_understanding/domain/receipt_element.dart';
 import '../application/receipt_line_builder_service.dart';
 import '../domain/receipt_line.dart';
 import '../domain/receipt_line_completeness.dart';
+import '../domain/receipt_line_debug_trace.dart';
 import '../domain/receipt_line_evidence.dart';
 import '../domain/receipt_line_failure.dart';
 import '../domain/receipt_line_result.dart';
@@ -99,6 +100,10 @@ class _ReceiptLineBuilderDebugScreenState
                     value: _ReceiptLineDebugView.unassigned,
                     label: Text('Unassigned'),
                   ),
+                  ButtonSegment(
+                    value: _ReceiptLineDebugView.trace,
+                    label: Text('Spatial trace'),
+                  ),
                 ],
                 selected: {_view},
                 onSelectionChanged: (selection) =>
@@ -151,7 +156,94 @@ class _ReceiptLineBuilderDebugScreenState
           ),
         ),
       _ReceiptLineDebugView.unassigned => _unassigned(result),
+      _ReceiptLineDebugView.trace => _trace(result.debugTrace),
     };
+  }
+
+  Widget _trace(ReceiptLineDebugTrace? trace) {
+    if (trace == null) {
+      return const Center(child: Text('No spatial trace is available.'));
+    }
+    return ListView(
+      key: const ValueKey('receipt-line-spatial-trace'),
+      padding: const EdgeInsets.all(12),
+      children: [
+        _TraceSection(
+          title: 'Calibration policy',
+          rows: trace.calibrationPolicy.values.map(
+            (key, value) => MapEntry(key, value.toStringAsFixed(2)),
+          ),
+        ),
+        _TraceSection(
+          title: 'Spatial summary',
+          rows: {
+            'Median positive height':
+                trace.medianPositiveElementHeight?.toStringAsFixed(2) ??
+                    'Unavailable',
+            'Canonical order': trace.canonicalElementOrder.join(' → '),
+            'Complete':
+                '${trace.completenessCounts[ReceiptLineCompleteness.complete]}',
+            'Partial':
+                '${trace.completenessCounts[ReceiptLineCompleteness.partial]}',
+            'Orphan':
+                '${trace.completenessCounts[ReceiptLineCompleteness.orphan]}',
+            'Product anchors': trace.productAnchorIds.join(', '),
+          },
+        ),
+        _TraceSection(
+          title: 'Element placement',
+          rows: {
+            for (final value in trace.elementPlacements)
+              value.elementId:
+                  value.status == ReceiptElementSpatialStatus.placed
+                      ? 'canonical:${value.canonicalIndex}, '
+                          'row:${value.rowIndex}, column:${value.columnIndex}'
+                      : value.status.name,
+          },
+        ),
+        _TraceSection(
+          title: 'Row decisions',
+          rows: {
+            for (var index = 0; index < trace.rowDecisions.length; index++)
+              '$index: ${trace.rowDecisions[index].previousElementId} → '
+                      '${trace.rowDecisions[index].currentElementId}':
+                  '${trace.rowDecisions[index].split ? 'SPLIT' : 'JOIN'}, '
+                      'vertical=${trace.rowDecisions[index].normalizedVerticalDistance.toStringAsFixed(3)}, '
+                      'overlap=${trace.rowDecisions[index].verticalOverlapRatio.toStringAsFixed(3)}, '
+                      'row=${trace.rowDecisions[index].resultingRowIndex}',
+          },
+        ),
+        _TraceSection(
+          title: 'Column decisions',
+          rows: {
+            for (var index = 0; index < trace.columnDecisions.length; index++)
+              '$index: ${trace.columnDecisions[index].previousElementId} → '
+                      '${trace.columnDecisions[index].currentElementId}':
+                  '${trace.columnDecisions[index].split ? 'SPLIT' : 'JOIN'}, '
+                      'gap=${trace.columnDecisions[index].normalizedHorizontalGap.toStringAsFixed(3)}, '
+                      'row=${trace.columnDecisions[index].rowIndex}, '
+                      'column=${trace.columnDecisions[index].resultingColumnIndex}',
+          },
+        ),
+        _TraceSection(
+          title: 'Line roles and rejected candidates',
+          rows: {
+            for (final value in trace.lineRoles)
+              value.lineId: 'anchor=${value.productAnchorId ?? 'None'}, '
+                  'roles=${_nullableStrings(value.roleElementIds)}, '
+                  'rejected=${_strings(value.rejectedCandidates)}, '
+                  'completeness=${_label(value.completeness)}',
+          },
+        ),
+        _TraceSection(
+          title: 'Unassigned elements',
+          rows: {
+            for (final value in trace.unassignedElements)
+              value.elementId: value.reasonCode,
+          },
+        ),
+      ],
+    );
   }
 
   Widget _elements() => ListView(
@@ -298,7 +390,7 @@ class _EvidenceRow extends StatelessWidget {
       );
 }
 
-enum _ReceiptLineDebugView { elements, lines, overlay, unassigned }
+enum _ReceiptLineDebugView { elements, lines, overlay, unassigned, trace }
 
 String _label(ReceiptLineCompleteness value) => switch (value) {
       ReceiptLineCompleteness.complete => 'Complete',
@@ -312,3 +404,34 @@ String _metrics(Map<String, double> values) => values.entries
 
 String _strings(Map<String, String> values) =>
     values.entries.map((entry) => '${entry.key}: ${entry.value}').join(', ');
+
+String _nullableStrings(Map<String, String?> values) => values.entries
+    .map((entry) => '${entry.key}: ${entry.value ?? 'None'}')
+    .join(', ');
+
+class _TraceSection extends StatelessWidget {
+  const _TraceSection({required this.title, required this.rows});
+
+  final String title;
+  final Map<String, String> rows;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              if (rows.isEmpty) const Text('None'),
+              for (final entry in rows.entries)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text('${entry.key}: ${entry.value}'),
+                ),
+            ],
+          ),
+        ),
+      );
+}

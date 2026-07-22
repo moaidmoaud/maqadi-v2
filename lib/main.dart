@@ -22,6 +22,8 @@ import 'receipt_ocr/application/receipt_ocr_service.dart';
 import 'receipt_ocr/domain/receipt_ocr_request.dart';
 import 'receipt_ocr/infrastructure/ml_kit/ml_kit_receipt_ocr_provider.dart';
 import 'receipt_ocr/presentation/receipt_ocr_screen.dart';
+import 'receipt_line_builder/application/receipt_line_builder_service.dart';
+import 'receipt_line_builder/presentation/receipt_line_builder_debug_screen.dart';
 import 'receipt_understanding/application/receipt_understanding_service.dart';
 import 'receipt_understanding/presentation/receipt_understanding_debug_screen.dart';
 import 'receipt_import/application/receipt_import_service.dart';
@@ -378,6 +380,19 @@ class _HomeScreenState extends State<HomeScreen> {
                             builder: (_) => ReceiptUnderstandingDebugScreen(
                               service: const ReceiptUnderstandingService(),
                               ocrResult: ocrResult,
+                              onInspectLines: (understandingResult) {
+                                Navigator.push<void>(
+                                  context,
+                                  MaterialPageRoute<void>(
+                                    builder: (_) =>
+                                        ReceiptLineBuilderDebugScreen(
+                                      service:
+                                          const ReceiptLineBuilderService(),
+                                      elements: understandingResult.elements,
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         );

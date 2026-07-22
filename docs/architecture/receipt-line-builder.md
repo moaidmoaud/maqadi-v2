@@ -123,6 +123,27 @@ The read-only debug screen exposes loading, results, empty, error, and retry sta
 
 Presentation resolves references for display but never reconstructs grouping, completeness, metrics, or evidence. It offers no editing or business action.
 
+## RC-1.2 runtime debug integration
+
+After Receipt Understanding succeeds, its internal debug screen exposes the read-only `عرض أسطر الإيصال` action. The action forwards the already-produced `ReceiptUnderstandingResult` to the existing Receipt Line Builder debug route. `ReceiptLineBuilderDebugScreen` invokes `ReceiptLineBuilderService` once during initialization. OCR and Product Matching navigation remain separate and unchanged; Product Matching continues to consume only `ReceiptOcrResult`.
+
+`ReceiptLineResult.debugTrace` carries an optional immutable `ReceiptLineDebugTrace`. The engine populates it for normal runtime builds, while the optional result field preserves compatibility with existing callers and test doubles. The trace records data already produced or consumed by grouping:
+
+- the immutable calibration policy and its current values;
+- median positive groupable-element height;
+- canonical element order;
+- canonical index plus row and column placement for every bounded groupable element;
+- explicit geometry-unavailable placement for every unbounded groupable element;
+- each consecutive row comparison, including element IDs, normalized vertical distance, overlap ratio, split decision, and resulting row;
+- each consecutive column comparison, including element IDs, normalized horizontal gap, split decision, and resulting column;
+- Complete, Partial, and Orphan counts;
+- product anchor IDs, per-line role references, and rejected attachment candidates;
+- unassigned element IDs and engine reason codes.
+
+The spatial index uses one shared implementation for traced and untraced organization. Trace collection observes the same boolean row and column decisions and never feeds values back into grouping. Tests compare both paths structurally to protect result equivalence.
+
+The Spatial Trace presentation only formats immutable trace fields. It does not calculate median height, reconstruct row or column membership, recompute distances, interpret split decisions, or change policy values. Trace data is derived in memory, is not persisted, and introduces no repository or business-domain dependency.
+
 ## Data integrity and performance
 
 - Everything is derived in memory and never persisted.

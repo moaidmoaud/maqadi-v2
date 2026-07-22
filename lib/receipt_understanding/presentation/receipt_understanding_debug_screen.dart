@@ -15,11 +15,13 @@ class ReceiptUnderstandingDebugScreen extends StatefulWidget {
     required this.service,
     required this.ocrResult,
     this.ocrReadingOrderGuaranteed = false,
+    this.onInspectLines,
   });
 
   final ReceiptUnderstandingService service;
   final ReceiptOcrResult ocrResult;
   final bool ocrReadingOrderGuaranteed;
+  final ValueChanged<ReceiptUnderstandingResult>? onInspectLines;
 
   @override
   State<ReceiptUnderstandingDebugScreen> createState() =>
@@ -106,6 +108,18 @@ class _ReceiptUnderstandingDebugScreenState
                     setState(() => _view = selection.single),
               ),
             ),
+            if (_result != null &&
+                _result!.elements.isNotEmpty &&
+                widget.onInspectLines != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: OutlinedButton.icon(
+                  key: const ValueKey('open-receipt-line-builder-debug'),
+                  onPressed: () => widget.onInspectLines!(_result!),
+                  icon: const Icon(Icons.view_stream_outlined),
+                  label: const Text('عرض أسطر الإيصال'),
+                ),
+              ),
             Expanded(child: _body()),
           ],
         ),

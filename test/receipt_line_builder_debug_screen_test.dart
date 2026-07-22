@@ -93,6 +93,44 @@ void main() {
     expect(find.textContaining('not spatially grouped'), findsOneWidget);
   });
 
+  testWidgets('displays engine-produced policy, summary, and split trace',
+      (tester) async {
+    final traced = const ReceiptLineBuilderEngine().build([
+      receiptElement('product', ReceiptElementType.productName, x: 0),
+      receiptElement('price', ReceiptElementType.price, x: 150),
+    ]);
+    await tester.pumpWidget(app(_QueuedService([Future.value(traced)])));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(-500, 0),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Spatial trace'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('receipt-line-spatial-trace')),
+        findsOneWidget);
+    expect(find.text('Calibration policy'), findsOneWidget);
+    expect(find.text('rowVerticalDistanceTolerance: 0.75'), findsOneWidget);
+    expect(find.text('rowMinimumOverlapRatio: 0.30'), findsOneWidget);
+    expect(find.text('columnGapTolerance: 8.00'), findsOneWidget);
+    expect(find.text('Median positive height: 10.00'), findsOneWidget);
+    expect(find.text('Complete: 0'), findsOneWidget);
+    expect(find.text('Partial: 1'), findsOneWidget);
+    expect(find.text('Orphan: 1'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('receipt-line-spatial-trace')),
+      const Offset(0, -650),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Row decisions'), findsOneWidget);
+    expect(find.text('Column decisions'), findsOneWidget);
+    expect(find.textContaining('JOIN, vertical=0.000'), findsOneWidget);
+    expect(find.textContaining('SPLIT, gap=11.000'), findsOneWidget);
+  });
+
   testWidgets('shows service errors and retries', (tester) async {
     final pending = Completer<ReceiptLineResult>();
     final service = _QueuedService([pending.future, Future.value(result)]);

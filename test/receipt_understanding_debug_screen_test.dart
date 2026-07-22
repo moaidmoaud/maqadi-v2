@@ -2,8 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:maqadi_v2/receipt_line_builder/application/receipt_line_builder_service.dart';
+import 'package:maqadi_v2/receipt_line_builder/domain/receipt_line_result.dart';
+import 'package:maqadi_v2/receipt_line_builder/presentation/receipt_line_builder_debug_screen.dart';
 import 'package:maqadi_v2/receipt_ocr/domain/receipt_ocr_result.dart';
 import 'package:maqadi_v2/receipt_understanding/application/receipt_understanding_service.dart';
+import 'package:maqadi_v2/receipt_understanding/domain/receipt_element.dart';
 import 'package:maqadi_v2/receipt_understanding/domain/receipt_element_type.dart';
 import 'package:maqadi_v2/receipt_understanding/domain/receipt_understanding_failure.dart';
 import 'package:maqadi_v2/receipt_understanding/domain/receipt_understanding_result.dart';
@@ -129,6 +133,48 @@ void main() {
     expect(find.byKey(const ValueKey('receipt-understanding-empty')),
         findsOneWidget);
   });
+
+  testWidgets(
+      'opens line debug with the existing result and invokes its service once',
+      (tester) async {
+    final understandingService = _QueuedService([Future.value(classified)]);
+    final lineService = _CountingLineService();
+    ReceiptUnderstandingResult? forwarded;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => ReceiptUnderstandingDebugScreen(
+          service: understandingService,
+          ocrResult: source,
+          ocrReadingOrderGuaranteed: true,
+          onInspectLines: (result) {
+            forwarded = result;
+            Navigator.push<void>(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => ReceiptLineBuilderDebugScreen(
+                  service: lineService,
+                  elements: result.elements,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('عرض أسطر الإيصال'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('open-receipt-line-builder-debug')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(forwarded, same(classified));
+    expect(understandingService.calls, 1);
+    expect(lineService.calls, 1);
+    expect(find.byKey(const ValueKey('receipt-line-builder-debug-screen')),
+        findsOneWidget);
+  });
 }
 
 class _QueuedService extends ReceiptUnderstandingService {
@@ -144,5 +190,15 @@ class _QueuedService extends ReceiptUnderstandingService {
   }) {
     final index = calls++;
     return results[index];
+  }
+}
+
+class _CountingLineService extends ReceiptLineBuilderService {
+  int calls = 0;
+
+  @override
+  Future<ReceiptLineResult> build(List<ReceiptElement> elements) {
+    calls++;
+    return super.build(elements);
   }
 }

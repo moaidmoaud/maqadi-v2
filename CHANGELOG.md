@@ -1,5 +1,16 @@
 # سجل التغييرات
 
+## RC-1.2 — Receipt Line Runtime Debug Integration
+
+### Internal runtime diagnostics
+- Added a read-only `عرض أسطر الإيصال` action from the successful Receipt Understanding debug screen to the existing Receipt Line Builder debug screen, reusing the already-produced Understanding result.
+- Added immutable engine trace data for calibration policy values, median height, canonical order, element row/column placement, row and column comparisons, exact split decisions, line completeness, anchors, role assignments, rejected candidates, and unassigned reasons.
+- Added a Spatial Trace view that displays engine-produced diagnostics without recalculating geometry or changing calibration, grouping, OCR, or Product Matching behavior.
+
+### Architecture and quality
+- Kept the trace derived, deterministic, read-only, in-memory, and independent from Flutter, repositories, persistence, matching, inventory, purchases, and shopping.
+- Added focused navigation, single-invocation, trace generation, split-decision, missing-geometry, determinism, presentation, architecture-boundary, and unchanged-grouping tests.
+
 ## Sprint RC-1 — Receipt Calibration & Benchmark Framework
 
 ### Calibration and measurement

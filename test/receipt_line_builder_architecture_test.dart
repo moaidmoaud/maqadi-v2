@@ -76,6 +76,34 @@ void main() {
       expect(source, isNot(contains(forbidden)), reason: forbidden);
     }
   });
+
+  test('debug trace domain has no Flutter or external domain dependencies', () {
+    final source = File(
+      'lib/receipt_line_builder/domain/receipt_line_debug_trace.dart',
+    ).readAsStringSync();
+    for (final forbidden in [
+      'package:flutter',
+      'Repository',
+      'SharedPreferences',
+      'ProductMatching',
+      'Inventory',
+      'Purchase',
+      'Shopping',
+      'receipt_ocr',
+      'receipt_understanding',
+    ]) {
+      expect(source, isNot(contains(forbidden)), reason: forbidden);
+    }
+  });
+
+  test('Product Matching remains on the OCR result contract', () {
+    final matching = _source('lib/product_matching');
+    final main = File('lib/main.dart').readAsStringSync();
+    expect(matching, contains('ReceiptOcrResult'));
+    expect(matching, isNot(contains('ReceiptLineResult')));
+    expect(main, contains('ProductMatchRequest('));
+    expect(main, contains('ocrResult: ocrResult'));
+  });
 }
 
 String _source(String path) => Directory(path)

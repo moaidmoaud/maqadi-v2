@@ -3,6 +3,7 @@ import '../../receipt_understanding/domain/receipt_element_type.dart';
 import '../domain/receipt_calibration_policy.dart';
 import '../domain/receipt_line.dart';
 import '../domain/receipt_line_completeness.dart';
+import '../domain/receipt_line_debug_trace.dart';
 import '../domain/receipt_line_evidence.dart';
 import '../domain/receipt_line_failure.dart';
 import '../domain/receipt_line_result.dart';
@@ -40,10 +41,18 @@ class ReceiptLineBuilderEngine {
         lines: const [],
         unassignedElements: const [],
         failures: const [],
+        debugTrace: _debugTrace(
+          lines: const [],
+          unassigned: const [],
+          medianHeight: null,
+          spatial: null,
+          missingGeometryIds: const [],
+        ),
       );
     }
 
     final geometries = <ReceiptLineGeometry>[];
+    final missingGeometryIds = <String>[];
     final unassigned = <UnassignedReceiptElement>[];
     final failures = <ReceiptLineFailure>[];
     for (var index = 0; index < elements.length; index++) {
@@ -59,6 +68,7 @@ class ReceiptLineBuilderEngine {
         continue;
       }
       if (!ReceiptLineGeometry.hasValidRegion(element)) {
+        missingGeometryIds.add(element.id);
         if (element.boundingBox != null) {
           failures.add(ReceiptLineFailure(
             code: ReceiptLineFailureCode.invalidGeometry,
@@ -83,12 +93,20 @@ class ReceiptLineBuilderEngine {
         lines: const [],
         unassignedElements: unassigned,
         failures: failures,
+        debugTrace: _debugTrace(
+          lines: const [],
+          unassigned: unassigned,
+          medianHeight: null,
+          spatial: null,
+          missingGeometryIds: missingGeometryIds,
+        ),
       );
     }
 
+    final spatial =
+        _spatialIndex.organizeWithTrace(geometries, medianHeight, _policy);
     final lines = <ReceiptLine>[];
-    for (final row
-        in _spatialIndex.organize(geometries, medianHeight, _policy)) {
+    for (final row in spatial.rows) {
       for (final column in row.columns) {
         lines.addAll(_buildColumn(
           row: row,
@@ -101,8 +119,72 @@ class ReceiptLineBuilderEngine {
       lines: lines,
       unassignedElements: unassigned,
       failures: failures,
+      debugTrace: _debugTrace(
+        lines: lines,
+        unassigned: unassigned,
+        medianHeight: medianHeight,
+        spatial: spatial,
+        missingGeometryIds: missingGeometryIds,
+      ),
     );
   }
+
+  ReceiptLineDebugTrace _debugTrace({
+    required List<ReceiptLine> lines,
+    required List<UnassignedReceiptElement> unassigned,
+    required double? medianHeight,
+    required ReceiptSpatialIndexResult? spatial,
+    required List<String> missingGeometryIds,
+  }) =>
+      ReceiptLineDebugTrace(
+        calibrationPolicy: _policy,
+        medianPositiveElementHeight: medianHeight,
+        canonicalElementOrder:
+            spatial?.canonicalElementOrder ?? const <String>[],
+        elementPlacements: [
+          ...?spatial?.elementPlacements,
+          for (final id in missingGeometryIds)
+            ReceiptElementSpatialTrace(
+              elementId: id,
+              status: ReceiptElementSpatialStatus.geometryUnavailable,
+              canonicalIndex: null,
+              rowIndex: null,
+              columnIndex: null,
+            ),
+        ],
+        rowDecisions: spatial?.rowDecisions ?? const [],
+        columnDecisions: spatial?.columnDecisions ?? const [],
+        completenessCounts: {
+          for (final value in ReceiptLineCompleteness.values)
+            value: lines.where((line) => line.completeness == value).length,
+        },
+        productAnchorIds:
+            lines.map((line) => line.productElementId).whereType<String>(),
+        lineRoles: [
+          for (final line in lines)
+            ReceiptLineRoleTrace(
+              lineId: line.id,
+              completeness: line.completeness,
+              productAnchorId: line.productElementId,
+              roleElementIds: {
+                'product': line.productElementId,
+                'quantity': line.quantityElementId,
+                'price': line.priceElementId,
+                'lineTotal': line.lineTotalElementId,
+                'discount': line.discountElementId,
+                'tax': line.taxElementId,
+              },
+              rejectedCandidates: line.evidence.rejectedCandidates,
+            ),
+        ],
+        unassignedElements: [
+          for (final value in unassigned)
+            ReceiptUnassignedElementTrace(
+              elementId: value.elementId,
+              reasonCode: value.reasonCode.name,
+            ),
+        ],
+      );
 
   List<ReceiptLine> _buildColumn({
     required ReceiptSpatialRow row,

@@ -1,4 +1,5 @@
 import 'receipt_line.dart';
+import 'receipt_line_debug_trace.dart';
 import 'receipt_line_failure.dart';
 import 'unassigned_receipt_element.dart';
 
@@ -7,6 +8,7 @@ class ReceiptLineResult {
     required Iterable<ReceiptLine> lines,
     required Iterable<UnassignedReceiptElement> unassignedElements,
     required Iterable<ReceiptLineFailure> failures,
+    this.debugTrace,
   })  : lines = List.unmodifiable(lines),
         unassignedElements = List.unmodifiable(unassignedElements),
         failures = List.unmodifiable(failures);
@@ -14,4 +16,5 @@ class ReceiptLineResult {
   final List<ReceiptLine> lines;
   final List<UnassignedReceiptElement> unassignedElements;
   final List<ReceiptLineFailure> failures;
+  final ReceiptLineDebugTrace? debugTrace;
 }
