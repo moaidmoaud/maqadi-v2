@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 8.2 — Product Matching v2 Foundation
+
+### Receipt-line matching contract
+- Added an isolated Product Matching v2 domain with immutable candidates, per-line results, typed statuses and reasons, and JSON-safe decision traces prepared for future matching diagnostics.
+- Added a `ReceiptLine`-based service interface and an explicit pending placeholder implementation without introducing matching rules or changing the current OCR-based Product Matching v1 flow.
+- Kept the foundation independent from OCR, Receipt Understanding, repositories, inventory, purchases, shopping, Flutter, persistence, and external packages.
+
 ## RC-1.3 — Receipt Line Decision Trace Audit
 
 ### Internal decision diagnostics
