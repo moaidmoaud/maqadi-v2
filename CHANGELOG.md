@@ -1,5 +1,17 @@
 # سجل التغييرات
 
+## Phase 8.1 — Receipt Line Builder
+
+### Receipt line structure
+- Added a deterministic, read-only Receipt Line Builder that groups `ReceiptElement` references into `Complete`, `Partial`, and `Orphan` structural lines without duplicating element data.
+- Added median-height-normalized row-first and column-second grouping, spatial-priority role attachment, receipt-total protection, deterministic line IDs, rejected-candidate evidence, and reference-only unassigned results.
+- Added a read-only debug screen for source elements, grouped lines, completeness filtering, grouping overlays, element highlighting, unassigned elements, and engine-generated evidence.
+
+### Architecture and quality
+- Kept line construction independent from OCR providers, repositories, product matching, purchases, inventory, shopping, persistence, and business validation.
+- Documented RFC-006 and ADR-033 through ADR-039 in `docs/architecture/receipt-line-builder.md`.
+- Added 48 engine, service, presentation, architecture, normalization, determinism, failure-mapping, and large-receipt tests.
+
 ## Phase 8.0 — Receipt Understanding Engine
 
 ### Receipt structure
