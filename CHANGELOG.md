@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 8.2.1 — Product Matching v2 Candidate Generation
+
+### Candidate discovery
+- Added a dedicated English/Arabic-safe normalization stage for case, punctuation, and repeated whitespace cleanup.
+- Added read-only Receipt Line text and catalog ports plus candidate generation that discovers every exact or shared-token catalog candidate, preserves catalog order, prevents duplicate product IDs, and assigns no score, ranking, confidence decision, or winner.
+- Added strongly typed discovery evidence and extended the serializable Product Match trace with the normalized query, generated IDs/count/order, catalog evaluation order, and per-candidate discovery evidence.
+
 ## Phase 8.2 — Product Matching v2 Foundation
 
 ### Receipt-line matching contract

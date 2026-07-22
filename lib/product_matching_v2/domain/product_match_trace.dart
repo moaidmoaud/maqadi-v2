@@ -1,4 +1,5 @@
 import 'product_match_candidate.dart';
+import 'product_match_evidence.dart';
 import 'product_match_reason.dart';
 
 class ProductMatchTrace {
@@ -9,10 +10,18 @@ class ProductMatchTrace {
     required Iterable<ProductMatchCandidate> rejectedCandidates,
     required Map<String, String> evidence,
     required this.finalDecision,
+    this.normalizedQuery,
+    this.generatedCandidateCount = 0,
+    Iterable<String> generatedCandidateIds = const [],
+    Iterable<String> generationOrder = const [],
+    Map<String, ProductMatchEvidence> discoveryEvidence = const {},
   })  : evaluationOrder = List.unmodifiable(evaluationOrder),
         candidateRanking = List.unmodifiable(candidateRanking),
         rejectedCandidates = List.unmodifiable(rejectedCandidates),
-        evidence = Map.unmodifiable(evidence);
+        evidence = Map.unmodifiable(evidence),
+        generatedCandidateIds = List.unmodifiable(generatedCandidateIds),
+        generationOrder = List.unmodifiable(generationOrder),
+        discoveryEvidence = Map.unmodifiable(discoveryEvidence);
 
   factory ProductMatchTrace.fromJson(Map<String, Object?> json) =>
       ProductMatchTrace(
@@ -38,6 +47,22 @@ class ProductMatchTrace {
         finalDecision: ProductMatchReason.values.byName(
           json['finalDecision']! as String,
         ),
+        normalizedQuery: json['normalizedQuery'] as String?,
+        generatedCandidateCount:
+            (json['generatedCandidateCount'] as num?)?.toInt() ?? 0,
+        generatedCandidateIds:
+            (json['generatedCandidateIds'] as List<Object?>? ?? const [])
+                .cast(),
+        generationOrder:
+            (json['generationOrder'] as List<Object?>? ?? const []).cast(),
+        discoveryEvidence:
+            (json['discoveryEvidence'] as Map<Object?, Object?>? ?? const {})
+                .map(
+          (key, value) => MapEntry(
+            key! as String,
+            ProductMatchEvidence.fromJson(value! as Map<String, Object?>),
+          ),
+        ),
       );
 
   final List<String> evaluationOrder;
@@ -46,6 +71,11 @@ class ProductMatchTrace {
   final List<ProductMatchCandidate> rejectedCandidates;
   final Map<String, String> evidence;
   final ProductMatchReason finalDecision;
+  final String? normalizedQuery;
+  final int generatedCandidateCount;
+  final List<String> generatedCandidateIds;
+  final List<String> generationOrder;
+  final Map<String, ProductMatchEvidence> discoveryEvidence;
 
   Map<String, Object?> toJson() => {
         'evaluationOrder': evaluationOrder,
@@ -58,5 +88,13 @@ class ProductMatchTrace {
         ],
         'evidence': evidence,
         'finalDecision': finalDecision.name,
+        'normalizedQuery': normalizedQuery,
+        'generatedCandidateCount': generatedCandidateCount,
+        'generatedCandidateIds': generatedCandidateIds,
+        'generationOrder': generationOrder,
+        'discoveryEvidence': {
+          for (final entry in discoveryEvidence.entries)
+            entry.key: entry.value.toJson(),
+        },
       };
 }

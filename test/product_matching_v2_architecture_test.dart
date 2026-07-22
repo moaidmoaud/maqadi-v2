@@ -38,4 +38,18 @@ void main() {
     expect(v1, contains('ProductMatchRequest'));
     expect(v1, contains('Future<ProductMatchResult> match'));
   });
+
+  test('candidate generation performs no ranking or winner selection', () {
+    final source = File(
+      'lib/product_matching_v2/application/candidate_generation_service.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('Future<List<ProductMatchCandidate>> generate'));
+    expect(source, contains('candidateRanking: const []'));
+    expect(source, contains('winningCandidate: null'));
+    expect(source, contains("'ranking': 'notPerformed'"));
+    expect(source, contains("'selection': 'notPerformed'"));
+    expect(source, isNot(contains('.sort(')));
+    expect(source, isNot(contains('fuzzy')));
+  });
 }
