@@ -3,10 +3,6 @@ import '../../receipt_understanding/domain/receipt_element_type.dart';
 class ReceiptLineGroupingRules {
   const ReceiptLineGroupingRules();
 
-  static const maximumNormalizedRowDistance = 0.75;
-  static const minimumVerticalOverlap = 0.3;
-  static const columnBreakNormalizedGap = 8.0;
-
   static const excludedTypes = <ReceiptElementType>{
     ReceiptElementType.header,
     ReceiptElementType.footer,

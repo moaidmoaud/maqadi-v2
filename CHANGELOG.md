@@ -1,5 +1,17 @@
 # سجل التغييرات
 
+## Sprint RC-1 — Receipt Calibration & Benchmark Framework
+
+### Calibration and measurement
+- Added an immutable `ReceiptCalibrationPolicy` that centralizes the existing median-height-normalized row and column grouping tolerances without changing their defaults or the Receipt Intelligence architecture.
+- Added a deterministic, read-only benchmark runner with manually declared ground truth, stable fixture keys, Understanding and Receipt Line comparisons, transparent metrics, mismatch details, and a de-duplicated manual-correction estimate.
+- Added the first official `DAN-0001` benchmark identifier as a committed synthetic/redacted OCR proxy; the private source image remains local and its accuracy is not claimed by the automated benchmark.
+
+### Debugging and quality
+- Added expected, actual, and mismatch overlays plus richer engine-provided Receipt Line evidence display for internal calibration and regression review.
+- Documented ADR-040 through ADR-045, metric formulas, fixture privacy, calibration acceptance, and the workflow for adding future receipts.
+- Added focused policy, comparison, runner, widget, architecture-boundary, deterministic, and large-fixture tests without adding packages or production persistence.
+
 ## Phase 8.1 — Receipt Line Builder
 
 ### Receipt line structure

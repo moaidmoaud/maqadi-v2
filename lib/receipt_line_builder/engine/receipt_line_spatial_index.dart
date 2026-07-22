@@ -1,5 +1,5 @@
+import '../domain/receipt_calibration_policy.dart';
 import 'receipt_line_geometry.dart';
-import 'receipt_line_grouping_rules.dart';
 
 class ReceiptSpatialColumn {
   ReceiptSpatialColumn({
@@ -25,9 +25,8 @@ class ReceiptLineSpatialIndex {
   const ReceiptLineSpatialIndex();
 
   List<ReceiptSpatialRow> organize(
-    List<ReceiptLineGeometry> geometries,
-    double medianHeight,
-  ) {
+      List<ReceiptLineGeometry> geometries, double medianHeight,
+      [ReceiptCalibrationPolicy policy = const ReceiptCalibrationPolicy()]) {
     if (geometries.isEmpty) return const [];
     final ordered = List<ReceiptLineGeometry>.from(geometries)
       ..sort((left, right) {
@@ -47,8 +46,8 @@ class ReceiptLineSpatialIndex {
       final distance =
           geometry.normalizedVerticalDistance(reference, medianHeight);
       final overlap = geometry.verticalOverlap(reference);
-      if (distance <= ReceiptLineGroupingRules.maximumNormalizedRowDistance ||
-          overlap >= ReceiptLineGroupingRules.minimumVerticalOverlap) {
+      if (distance <= policy.rowVerticalDistanceTolerance ||
+          overlap >= policy.rowMinimumOverlapRatio) {
         current.add(geometry);
       } else {
         rowValues.add(current);
@@ -61,7 +60,7 @@ class ReceiptLineSpatialIndex {
       for (var rowIndex = 0; rowIndex < rowValues.length; rowIndex++)
         ReceiptSpatialRow(
           index: rowIndex,
-          columns: _columns(rowValues[rowIndex], medianHeight),
+          columns: _columns(rowValues[rowIndex], medianHeight, policy),
         ),
     ]);
   }
@@ -69,6 +68,7 @@ class ReceiptLineSpatialIndex {
   List<ReceiptSpatialColumn> _columns(
     List<ReceiptLineGeometry> row,
     double medianHeight,
+    ReceiptCalibrationPolicy policy,
   ) {
     final ordered = List<ReceiptLineGeometry>.from(row)
       ..sort((left, right) {
@@ -82,7 +82,7 @@ class ReceiptLineSpatialIndex {
       final previous = current.last;
       final gap = (geometry.left - previous.right).clamp(0, double.infinity) /
           medianHeight;
-      if (gap > ReceiptLineGroupingRules.columnBreakNormalizedGap) {
+      if (gap > policy.columnGapTolerance) {
         values.add(current);
         current = <ReceiptLineGeometry>[geometry];
       } else {

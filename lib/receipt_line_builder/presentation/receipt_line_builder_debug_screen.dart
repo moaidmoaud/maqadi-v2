@@ -187,7 +187,7 @@ class _ReceiptLineBuilderDebugScreenState
             trailing: IconButton(
               key: ValueKey('receipt-line-evidence-${line.id}'),
               tooltip: 'Grouping evidence',
-              onPressed: () => _showEvidence(line.evidence),
+              onPressed: () => _showEvidence(line.evidence, line: line),
               icon: const Icon(Icons.info_outline),
             ),
           ),
@@ -235,7 +235,7 @@ class _ReceiptLineBuilderDebugScreenState
     return null;
   }
 
-  void _showEvidence(ReceiptLineEvidence evidence) {
+  void _showEvidence(ReceiptLineEvidence evidence, {ReceiptLine? line}) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -247,6 +247,15 @@ class _ReceiptLineBuilderDebugScreenState
             Text('Grouping evidence',
                 style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
+            if (line != null) ...[
+              _EvidenceRow('Completeness', _label(line.completeness)),
+              _EvidenceRow('Product', line.productElementId ?? 'None'),
+              _EvidenceRow('Price', line.priceElementId ?? 'None'),
+              _EvidenceRow('Quantity', line.quantityElementId ?? 'None'),
+              _EvidenceRow('Discount', line.discountElementId ?? 'None'),
+              _EvidenceRow('Tax', line.taxElementId ?? 'None'),
+              _EvidenceRow('Line total', line.lineTotalElementId ?? 'None'),
+            ],
             _EvidenceRow('Anchor', evidence.anchorElementId ?? 'None'),
             _EvidenceRow('Attached', evidence.attachedElementIds.join(', ')),
             _EvidenceRow('Rule', evidence.appliedGroupingRule),
@@ -255,7 +264,7 @@ class _ReceiptLineBuilderDebugScreenState
             _EvidenceRow(
                 'Horizontal', _metrics(evidence.normalizedHorizontalDistances)),
             _EvidenceRow('Overlap', _metrics(evidence.overlapMetrics)),
-            _EvidenceRow('Columns', _strings(evidence.columnEvidence)),
+            _EvidenceRow('Row / column', _strings(evidence.columnEvidence)),
             _EvidenceRow('Rejected', _strings(evidence.rejectedCandidates)),
             _EvidenceRow('Factors', evidence.confidenceFactors.join(', ')),
             const SizedBox(height: 8),

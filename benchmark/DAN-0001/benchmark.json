@@ -1,0 +1,107 @@
+{
+  "receiptId": "DAN-0001",
+  "fixtureVersion": "synthetic-proxy-v1",
+  "syntheticFixture": true,
+  "privateImageCommitted": false,
+  "calibrationNotes": "Synthetic redacted proxy used to validate the benchmark framework. It is not ground truth for the private DAN-0001 image.",
+  "fixtureBlocks": [
+    {
+      "fixtureKey": "store",
+      "text": "[REDACTED STORE]",
+      "confidence": 0.98,
+      "region": {"x": 20, "y": 0, "width": 160, "height": 5}
+    },
+    {
+      "fixtureKey": "receipt-label",
+      "text": "RECEIPT",
+      "confidence": 0.98,
+      "region": {"x": 70, "y": 12, "width": 60, "height": 5}
+    },
+    {
+      "fixtureKey": "product-a",
+      "text": "REDACTED ITEM A",
+      "confidence": 0.96,
+      "region": {"x": 0, "y": 30, "width": 80, "height": 5}
+    },
+    {
+      "fixtureKey": "price-a",
+      "text": "12.50",
+      "confidence": 0.97,
+      "region": {"x": 100, "y": 30, "width": 25, "height": 5}
+    },
+    {
+      "fixtureKey": "product-b",
+      "text": "REDACTED ITEM B",
+      "confidence": 0.95,
+      "region": {"x": 0, "y": 45, "width": 80, "height": 5}
+    },
+    {
+      "fixtureKey": "quantity-b",
+      "text": "2 x 5.00",
+      "confidence": 0.93,
+      "region": {"x": 70, "y": 45, "width": 20, "height": 5}
+    },
+    {
+      "fixtureKey": "price-b",
+      "text": "10.00",
+      "confidence": 0.96,
+      "region": {"x": 100, "y": 45, "width": 25, "height": 5}
+    },
+    {
+      "fixtureKey": "receipt-total",
+      "text": "TOTAL 22.50",
+      "confidence": 0.98,
+      "region": {"x": 70, "y": 80, "width": 60, "height": 5}
+    },
+    {
+      "fixtureKey": "footer",
+      "text": "THANK YOU",
+      "confidence": 0.97,
+      "region": {"x": 70, "y": 95, "width": 60, "height": 5}
+    }
+  ],
+  "groundTruth": {
+    "manuallyVerified": true,
+    "scope": "synthetic-redacted-fixture-only",
+    "ocrTextVerified": false,
+    "expectedElements": [
+      {"fixtureKey": "store", "type": "storeName"},
+      {"fixtureKey": "receipt-label", "type": "metadata"},
+      {"fixtureKey": "product-a", "type": "productName"},
+      {"fixtureKey": "price-a", "type": "price"},
+      {"fixtureKey": "product-b", "type": "productName"},
+      {"fixtureKey": "quantity-b", "type": "quantity"},
+      {"fixtureKey": "price-b", "type": "price"},
+      {"fixtureKey": "receipt-total", "type": "total"},
+      {"fixtureKey": "footer", "type": "footer"}
+    ],
+    "expectedLines": [
+      {
+        "fixtureKey": "line-product-a",
+        "productKey": "product-a",
+        "priceKey": "price-a",
+        "quantityKey": null,
+        "discountKey": null,
+        "taxKey": null,
+        "lineTotalKey": null,
+        "completeness": "complete"
+      },
+      {
+        "fixtureKey": "line-product-b",
+        "productKey": "product-b",
+        "priceKey": "price-b",
+        "quantityKey": "quantity-b",
+        "discountKey": null,
+        "taxKey": null,
+        "lineTotalKey": null,
+        "completeness": "complete"
+      }
+    ],
+    "expectedUnassignedKeys": [
+      "store",
+      "receipt-label",
+      "receipt-total",
+      "footer"
+    ]
+  }
+}

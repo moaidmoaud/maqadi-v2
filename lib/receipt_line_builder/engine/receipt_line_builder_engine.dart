@@ -1,5 +1,6 @@
 import '../../receipt_understanding/domain/receipt_element.dart';
 import '../../receipt_understanding/domain/receipt_element_type.dart';
+import '../domain/receipt_calibration_policy.dart';
 import '../domain/receipt_line.dart';
 import '../domain/receipt_line_completeness.dart';
 import '../domain/receipt_line_evidence.dart';
@@ -13,18 +14,27 @@ import 'receipt_line_spatial_index.dart';
 
 class ReceiptLineBuilderEngine {
   const ReceiptLineBuilderEngine({
+    ReceiptCalibrationPolicy policy = const ReceiptCalibrationPolicy(),
     ReceiptLineGroupingRules rules = const ReceiptLineGroupingRules(),
     ReceiptLineSpatialIndex spatialIndex = const ReceiptLineSpatialIndex(),
     ReceiptLineIdGenerator idGenerator = const ReceiptLineIdGenerator(),
-  })  : _rules = rules,
+  })  : _policy = policy,
+        _rules = rules,
         _spatialIndex = spatialIndex,
         _idGenerator = idGenerator;
 
+  final ReceiptCalibrationPolicy _policy;
   final ReceiptLineGroupingRules _rules;
   final ReceiptLineSpatialIndex _spatialIndex;
   final ReceiptLineIdGenerator _idGenerator;
 
   ReceiptLineResult build(List<ReceiptElement> elements) {
+    if (!_policy.isValid) {
+      throw const ReceiptLineFailure(
+        code: ReceiptLineFailureCode.groupingFailed,
+        message: 'Receipt calibration policy contains invalid ratios.',
+      );
+    }
     if (elements.isEmpty) {
       return ReceiptLineResult(
         lines: const [],
@@ -77,7 +87,8 @@ class ReceiptLineBuilderEngine {
     }
 
     final lines = <ReceiptLine>[];
-    for (final row in _spatialIndex.organize(geometries, medianHeight)) {
+    for (final row
+        in _spatialIndex.organize(geometries, medianHeight, _policy)) {
       for (final column in row.columns) {
         lines.addAll(_buildColumn(
           row: row,
