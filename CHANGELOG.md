@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 9.3 — Receipt Extraction Reliability Gate
+
+### Permanent benchmark regression protection
+- Added an immutable DAN-0001 baseline for product-text coverage, recovered and remaining orphans, and complete, partial, and orphan line counts.
+- Added deterministic improved, unchanged, and regressed comparisons plus a human-readable reliability report.
+- Added a permanent full-pipeline test gate that fails when coverage or recovered-orphan counts decrease, or remaining-orphan counts increase, without changing any production receipt behavior.
+
 ## Phase 9.2B — Orphan Line Recovery Engine
 
 ### Deterministic post-builder recovery
