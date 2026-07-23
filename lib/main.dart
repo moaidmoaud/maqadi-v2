@@ -18,6 +18,10 @@ import 'products.dart';
 import 'product_matching/domain/product_match_models.dart';
 import 'product_matching/presentation/product_matching_screen.dart';
 import 'product_matching/product_matching_factory.dart';
+import 'product_matching_v2/application/candidate_generation_debug_service.dart';
+import 'product_matching_v2/infrastructure/catalog_product_candidate_catalog.dart';
+import 'product_matching_v2/infrastructure/mapped_receipt_line_text_resolver.dart';
+import 'product_matching_v2/presentation/candidate_generation_debug_screen.dart';
 import 'receipt_ocr/application/receipt_ocr_service.dart';
 import 'receipt_ocr/domain/receipt_ocr_request.dart';
 import 'receipt_ocr/infrastructure/ml_kit/ml_kit_receipt_ocr_provider.dart';
@@ -389,6 +393,29 @@ class _HomeScreenState extends State<HomeScreen> {
                                       service:
                                           const ReceiptLineBuilderService(),
                                       elements: understandingResult.elements,
+                                      onInspectCandidates: (lineResult) {
+                                        final textResolver =
+                                            MappedReceiptLineTextResolver({
+                                          for (final element
+                                              in understandingResult.elements)
+                                            element.id: element.text,
+                                        });
+                                        Navigator.push<void>(
+                                          context,
+                                          MaterialPageRoute<void>(
+                                            builder: (_) =>
+                                                CandidateGenerationDebugScreen(
+                                              service:
+                                                  CandidateGenerationDebugService(
+                                                catalog:
+                                                    const CatalogProductCandidateCatalog(),
+                                                textResolver: textResolver,
+                                              ),
+                                              lines: lineResult.lines,
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
                                   ),
                                 );

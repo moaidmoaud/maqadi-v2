@@ -16,10 +16,12 @@ class ReceiptLineBuilderDebugScreen extends StatefulWidget {
     super.key,
     required this.service,
     required this.elements,
+    this.onInspectCandidates,
   });
 
   final ReceiptLineBuilderService service;
   final List<ReceiptElement> elements;
+  final ValueChanged<ReceiptLineResult>? onInspectCandidates;
 
   @override
   State<ReceiptLineBuilderDebugScreen> createState() =>
@@ -62,6 +64,13 @@ class _ReceiptLineBuilderDebugScreenState
         appBar: AppBar(
           title: const Text('Receipt line debug'),
           actions: [
+            if (_result != null && widget.onInspectCandidates != null)
+              IconButton(
+                key: const ValueKey('open-candidate-generation-debug'),
+                tooltip: 'Candidate Generation v2',
+                onPressed: () => widget.onInspectCandidates!(_result!),
+                icon: const Icon(Icons.manage_search),
+              ),
             PopupMenuButton<Object>(
               key: const ValueKey('receipt-line-completeness-filter'),
               tooltip: 'Filter completeness',

@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 8.2.1A — Candidate Generation Debug UI
+
+### Real-receipt diagnostics
+- Added a read-only Candidate Generation v2 debug screen reachable from the existing Receipt Line Builder debug flow.
+- Added per-line original and normalized text, generated candidate order/count, zero score/confidence, typed discovery evidence, and explicit `Ranking: Not executed` / `Selection: Not executed` diagnostics.
+- Added clear debug reasons for missing product text, an empty catalog, and no valid candidates while leaving Candidate Generation, normalization, Product Matching v1, Receipt Understanding, Receipt Line Builder grouping, calibration, and benchmarks unchanged.
+
 ## Phase 8.2.1 — Product Matching v2 Candidate Generation
 
 ### Candidate discovery
