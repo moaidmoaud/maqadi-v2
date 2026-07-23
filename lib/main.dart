@@ -27,6 +27,7 @@ import 'product_matching_v2/presentation/candidate_generation_debug_screen.dart'
 import 'receipt_extraction_benchmark/application/receipt_extraction_benchmark_service.dart';
 import 'receipt_extraction_benchmark/domain/receipt_extraction_benchmark_input.dart';
 import 'receipt_extraction_benchmark/presentation/receipt_extraction_benchmark_screen.dart';
+import 'receipt_reliability_gate/application/receipt_reliability_report_service.dart';
 import 'receipt_ocr/application/receipt_ocr_service.dart';
 import 'receipt_ocr/domain/receipt_ocr_request.dart';
 import 'receipt_ocr/infrastructure/ml_kit/ml_kit_receipt_ocr_provider.dart';
@@ -422,6 +423,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 ReceiptExtractionBenchmarkScreen(
                                               service:
                                                   const ReceiptExtractionBenchmarkService(),
+                                              reliabilityReportService:
+                                                  const ReceiptReliabilityReportService(),
                                               input:
                                                   ReceiptExtractionBenchmarkInput(
                                                 receiptId:

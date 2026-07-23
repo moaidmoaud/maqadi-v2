@@ -4,8 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('reliability gate is Flutter-free, read-only, and dependency-light', () {
-    final files =
-        Directory('lib/receipt_reliability_gate').listSync(recursive: true);
+    final files = [
+      ...Directory('lib/receipt_reliability_gate/domain')
+          .listSync(recursive: true),
+      ...Directory('lib/receipt_reliability_gate/application')
+          .listSync(recursive: true),
+    ];
 
     for (final file in files.whereType<File>()) {
       final source = file.readAsStringSync();

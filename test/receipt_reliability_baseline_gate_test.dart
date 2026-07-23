@@ -7,6 +7,7 @@ import 'package:maqadi_v2/receipt_benchmark/application/receipt_benchmark_runner
 import 'package:maqadi_v2/receipt_extraction_benchmark/application/receipt_extraction_benchmark_service.dart';
 import 'package:maqadi_v2/receipt_extraction_benchmark/domain/receipt_extraction_benchmark_input.dart';
 import 'package:maqadi_v2/receipt_reliability_gate/application/receipt_reliability_gate.dart';
+import 'package:maqadi_v2/receipt_reliability_gate/domain/receipt_reliability_baselines.dart';
 import 'package:maqadi_v2/receipt_reliability_gate/domain/receipt_reliability_snapshot.dart';
 
 import 'receipt_benchmark_test_support.dart';
@@ -41,6 +42,7 @@ void main() {
 
     final result = gate.evaluate(baseline: baseline, current: current);
 
+    expect(ReceiptReliabilityBaselines.dan0001.toJson(), baseline.toJson());
     expect(
       result.passed,
       isTrue,

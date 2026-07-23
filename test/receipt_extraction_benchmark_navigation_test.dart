@@ -11,6 +11,7 @@ import 'package:maqadi_v2/receipt_line_builder/domain/receipt_line_result.dart';
 import 'package:maqadi_v2/receipt_line_builder/engine/receipt_line_builder_engine.dart';
 import 'package:maqadi_v2/receipt_line_builder/presentation/receipt_line_builder_debug_screen.dart';
 import 'package:maqadi_v2/receipt_ocr/domain/receipt_ocr_result.dart';
+import 'package:maqadi_v2/receipt_reliability_gate/application/receipt_reliability_report_service.dart';
 import 'package:maqadi_v2/receipt_understanding/domain/receipt_element.dart';
 import 'package:maqadi_v2/receipt_understanding/domain/receipt_understanding_result.dart';
 
@@ -115,6 +116,54 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Receipt: runtime-test'), findsOneWidget);
+  });
+
+  testWidgets('opens the existing reliability comparison from the benchmark',
+      (tester) async {
+    final understandingResult = ReceiptUnderstandingResult(
+      elements: elements,
+      ocrOrderPreserved: true,
+    );
+    final ocrResult = ReceiptOcrResult(
+      text: elements.map((element) => element.text).join('\n'),
+      blocks: [
+        for (final element in elements)
+          ReceiptOcrBlock(text: element.text, lines: const []),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(
+      home: ReceiptExtractionBenchmarkScreen(
+        service: const ReceiptExtractionBenchmarkService(),
+        reliabilityReportService: const ReceiptReliabilityReportService(),
+        input: ReceiptExtractionBenchmarkInput(
+          receiptId: 'runtime-reliability-test',
+          ocrResult: ocrResult,
+          understandingResult: understandingResult,
+          lineResult: lineResult,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('open-receipt-reliability-gate-report')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Receipt Reliability Gate'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('open-receipt-reliability-gate-report')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('receipt-reliability-gate-report-screen')),
+      findsOneWidget,
+    );
+    expect(find.text('PASS'), findsOneWidget);
+    expect(find.textContaining('Product Text Coverage'), findsOneWidget);
+    expect(find.textContaining('Recovered Orphans'), findsOneWidget);
+    expect(find.textContaining('Remaining Orphans'), findsOneWidget);
+    expect(find.textContaining('UNCHANGED — PASS'), findsOneWidget);
   });
 }
 

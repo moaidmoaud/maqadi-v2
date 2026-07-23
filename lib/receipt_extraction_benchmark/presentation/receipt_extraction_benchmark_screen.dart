@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../receipt_reliability_gate/application/receipt_reliability_report_service.dart';
+import '../../receipt_reliability_gate/presentation/receipt_reliability_gate_report_screen.dart';
 import '../application/receipt_extraction_benchmark_service.dart';
 import '../domain/receipt_extraction_benchmark_input.dart';
 import '../domain/receipt_extraction_benchmark_result.dart';
@@ -9,10 +11,12 @@ class ReceiptExtractionBenchmarkScreen extends StatefulWidget {
     super.key,
     required this.service,
     required this.input,
+    this.reliabilityReportService,
   });
 
   final ReceiptExtractionBenchmarkService service;
   final ReceiptExtractionBenchmarkInput input;
+  final ReceiptReliabilityReportService? reliabilityReportService;
 
   @override
   State<ReceiptExtractionBenchmarkScreen> createState() =>
@@ -23,6 +27,7 @@ class _ReceiptExtractionBenchmarkScreenState
     extends State<ReceiptExtractionBenchmarkScreen> {
   ReceiptExtractionBenchmarkResult? _result;
   Object? _error;
+  bool _openingReliabilityReport = false;
 
   @override
   void initState() {
@@ -48,9 +53,45 @@ class _ReceiptExtractionBenchmarkScreenState
   @override
   Widget build(BuildContext context) => Scaffold(
         key: const ValueKey('receipt-extraction-benchmark-screen'),
-        appBar: AppBar(title: const Text('Receipt Extraction Benchmark')),
+        appBar: AppBar(
+          title: const Text('Receipt Extraction Benchmark'),
+          actions: [
+            if (_result != null && widget.reliabilityReportService != null)
+              IconButton(
+                key: const ValueKey('open-receipt-reliability-gate-report'),
+                tooltip: 'Receipt Reliability Gate',
+                onPressed:
+                    _openingReliabilityReport ? null : _openReliabilityReport,
+                icon: const Icon(Icons.verified_outlined),
+              ),
+          ],
+        ),
         body: _body(),
       );
+
+  Future<void> _openReliabilityReport() async {
+    final extraction = _result;
+    final service = widget.reliabilityReportService;
+    if (extraction == null || service == null) return;
+    setState(() => _openingReliabilityReport = true);
+    try {
+      final result = await service.generate(
+        input: widget.input,
+        extraction: extraction,
+      );
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(MaterialPageRoute<void>(
+        builder: (_) => ReceiptReliabilityGateReportScreen(result: result),
+      ));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reliability report is unavailable.')),
+      );
+    } finally {
+      if (mounted) setState(() => _openingReliabilityReport = false);
+    }
+  }
 
   Widget _body() {
     if (_error != null) {
