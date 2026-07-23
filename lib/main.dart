@@ -22,6 +22,9 @@ import 'product_matching_v2/application/candidate_generation_debug_service.dart'
 import 'product_matching_v2/infrastructure/catalog_product_candidate_catalog.dart';
 import 'product_matching_v2/infrastructure/mapped_receipt_line_text_resolver.dart';
 import 'product_matching_v2/presentation/candidate_generation_debug_screen.dart';
+import 'receipt_extraction_benchmark/application/receipt_extraction_benchmark_service.dart';
+import 'receipt_extraction_benchmark/domain/receipt_extraction_benchmark_input.dart';
+import 'receipt_extraction_benchmark/presentation/receipt_extraction_benchmark_screen.dart';
 import 'receipt_ocr/application/receipt_ocr_service.dart';
 import 'receipt_ocr/domain/receipt_ocr_request.dart';
 import 'receipt_ocr/infrastructure/ml_kit/ml_kit_receipt_ocr_provider.dart';
@@ -393,6 +396,28 @@ class _HomeScreenState extends State<HomeScreen> {
                                       service:
                                           const ReceiptLineBuilderService(),
                                       elements: understandingResult.elements,
+                                      onInspectExtractionBenchmark:
+                                          (lineResult) {
+                                        Navigator.push<void>(
+                                          context,
+                                          MaterialPageRoute<void>(
+                                            builder: (_) =>
+                                                ReceiptExtractionBenchmarkScreen(
+                                              service:
+                                                  const ReceiptExtractionBenchmarkService(),
+                                              input:
+                                                  ReceiptExtractionBenchmarkInput(
+                                                receiptId:
+                                                    'runtime-${image.createdAt.toUtc().toIso8601String()}',
+                                                ocrResult: ocrResult,
+                                                understandingResult:
+                                                    understandingResult,
+                                                lineResult: lineResult,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
                                       onInspectCandidates: (lineResult) {
                                         final textResolver =
                                             MappedReceiptLineTextResolver({

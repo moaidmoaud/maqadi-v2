@@ -17,11 +17,13 @@ class ReceiptLineBuilderDebugScreen extends StatefulWidget {
     required this.service,
     required this.elements,
     this.onInspectCandidates,
+    this.onInspectExtractionBenchmark,
   });
 
   final ReceiptLineBuilderService service;
   final List<ReceiptElement> elements;
   final ValueChanged<ReceiptLineResult>? onInspectCandidates;
+  final ValueChanged<ReceiptLineResult>? onInspectExtractionBenchmark;
 
   @override
   State<ReceiptLineBuilderDebugScreen> createState() =>
@@ -64,6 +66,13 @@ class _ReceiptLineBuilderDebugScreenState
         appBar: AppBar(
           title: const Text('Receipt line debug'),
           actions: [
+            if (_result != null && widget.onInspectExtractionBenchmark != null)
+              IconButton(
+                key: const ValueKey('open-receipt-extraction-benchmark'),
+                tooltip: 'Receipt Extraction Benchmark',
+                onPressed: () => widget.onInspectExtractionBenchmark!(_result!),
+                icon: const Icon(Icons.analytics_outlined),
+              ),
             if (_result != null && widget.onInspectCandidates != null)
               IconButton(
                 key: const ValueKey('open-candidate-generation-debug'),
