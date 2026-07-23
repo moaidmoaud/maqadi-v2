@@ -1,4 +1,5 @@
 import '../../receipt_line_builder/domain/receipt_line.dart';
+import '../domain/candidate_generation_diagnostics.dart';
 import '../domain/product_catalog_entry.dart';
 import '../domain/product_match_candidate.dart';
 import '../domain/product_match_evidence.dart';
@@ -33,8 +34,10 @@ class CandidateGenerationService {
   final ProductMatchTraceCallback? _onTrace;
 
   Future<List<ProductMatchCandidate>> generate(ReceiptLine line) async {
-    final query =
-        _normalizer.normalize(await _textResolver.resolve(line) ?? '');
+    final normalization = _normalizer.normalizeWithTrace(
+      await _textResolver.resolve(line) ?? '',
+    );
+    final query = normalization.normalizedText;
     final products = query.isEmpty
         ? const <ProductCatalogEntry>[]
         : await _catalog.readProducts();
@@ -44,28 +47,75 @@ class CandidateGenerationService {
     final generatedIds = <String>{};
     final evaluationOrder = <String>[];
     final evidence = <String, ProductMatchEvidence>{};
+    final seenProductIds = <String>{};
+    var validCatalogEntryCount = 0;
+    var invalidCatalogEntryCount = 0;
+    var duplicateProductIdCount = 0;
+    var evaluatedEntryCount = 0;
+    var rejectedNoTextCount = 0;
+    var rejectedNoTokenOverlapCount = 0;
+    final catalogPreview = <CandidateCatalogPreviewEntry>[];
 
     for (final product in products) {
       evaluationOrder.add(product.id);
       if (product.id.trim().isEmpty || product.displayName.trim().isEmpty) {
+        invalidCatalogEntryCount++;
         continue;
       }
+      validCatalogEntryCount++;
+      if (!seenProductIds.add(product.id)) duplicateProductIdCount++;
+      final normalizedCatalogName = _normalizer.normalize(product.displayName);
+      if (normalizedCatalogName.isNotEmpty &&
+          catalogPreview.length < _catalogPreviewLimit) {
+        catalogPreview.add(CandidateCatalogPreviewEntry(
+          productId: product.id,
+          normalizedName: normalizedCatalogName,
+        ));
+      }
       if (generatedIds.contains(product.id)) continue;
+      evaluatedEntryCount++;
       final discovery = _discover(product, query, queryTokens);
-      if (discovery == null) continue;
+      switch (discovery.outcome) {
+        case _CandidateDiscoveryOutcome.noText:
+          rejectedNoTextCount++;
+          continue;
+        case _CandidateDiscoveryOutcome.noTokenOverlap:
+          rejectedNoTokenOverlapCount++;
+          continue;
+        case _CandidateDiscoveryOutcome.accepted:
+          break;
+      }
       generatedIds.add(product.id);
-      evidence[product.id] = discovery.evidence;
+      final accepted = discovery.discovery!;
+      evidence[product.id] = accepted.evidence;
       candidates.add(ProductMatchCandidate(
         productId: product.id,
         displayName: product.displayName,
         matchingScore: 0,
         confidence: 0,
-        evidence: discovery.evidence,
-        matchReason: discovery.reason,
+        evidence: accepted.evidence,
+        matchReason: accepted.reason,
       ));
     }
 
     final result = List<ProductMatchCandidate>.unmodifiable(candidates);
+    final diagnostics = CandidateGenerationDiagnostics(
+      reason: _diagnosticReason(
+        query: query,
+        catalogEntryCount: products.length,
+        validCatalogEntryCount: validCatalogEntryCount,
+        acceptedCount: result.length,
+      ),
+      catalogEntryCount: products.length,
+      validCatalogEntryCount: validCatalogEntryCount,
+      invalidCatalogEntryCount: invalidCatalogEntryCount,
+      duplicateProductIdCount: duplicateProductIdCount,
+      evaluatedEntryCount: evaluatedEntryCount,
+      rejectedNoTextCount: rejectedNoTextCount,
+      rejectedNoTokenOverlapCount: rejectedNoTokenOverlapCount,
+      acceptedCount: result.length,
+      catalogPreview: catalogPreview,
+    );
     _onTrace?.call(ProductMatchTrace(
       evaluationOrder: evaluationOrder,
       candidateRanking: const [],
@@ -77,7 +127,11 @@ class CandidateGenerationService {
         'selection': 'notPerformed',
       },
       finalDecision: ProductMatchReason.notEvaluated,
+      originalQueryText: normalization.originalText,
+      preCorrectionNormalizedQuery: normalization.preCorrectionNormalizedText,
       normalizedQuery: query,
+      appliedNormalizationOperations: normalization.appliedOperations,
+      candidateGenerationDiagnostics: diagnostics,
       generatedCandidateCount: result.length,
       generatedCandidateIds: result.map((value) => value.productId),
       generationOrder: result.map((value) => value.productId),
@@ -86,12 +140,34 @@ class CandidateGenerationService {
     return result;
   }
 
-  _CandidateDiscovery? _discover(
+  CandidateGenerationDiagnosticReason _diagnosticReason({
+    required String query,
+    required int catalogEntryCount,
+    required int validCatalogEntryCount,
+    required int acceptedCount,
+  }) {
+    if (query.isEmpty) {
+      return CandidateGenerationDiagnosticReason.noProductText;
+    }
+    if (catalogEntryCount == 0) {
+      return CandidateGenerationDiagnosticReason.emptyCatalog;
+    }
+    if (validCatalogEntryCount == 0) {
+      return CandidateGenerationDiagnosticReason.noValidCatalogEntries;
+    }
+    if (acceptedCount == 0) {
+      return CandidateGenerationDiagnosticReason.noCandidateMatch;
+    }
+    return CandidateGenerationDiagnosticReason.candidatesGenerated;
+  }
+
+  _CandidateDiscoveryResult _discover(
     ProductCatalogEntry product,
     String query,
     Set<String> queryTokens,
   ) {
     _CandidateDiscovery? tokenDiscovery;
+    var hasSearchableText = false;
     final texts = <(String, ProductMatchDiscoverySource)>[
       (product.displayName, ProductMatchDiscoverySource.catalogName),
       for (final alias in product.aliases)
@@ -100,6 +176,7 @@ class CandidateGenerationService {
     for (final (text, source) in texts) {
       final normalized = _normalizer.normalize(text);
       if (normalized.isEmpty) continue;
+      hasSearchableText = true;
       final matchedTokens = normalized
           .split(' ')
           .where(queryTokens.contains)
@@ -118,13 +195,22 @@ class CandidateGenerationService {
           discoverySource: source,
         ),
       );
-      if (exact) return current;
+      if (exact) {
+        return _CandidateDiscoveryResult.accepted(current);
+      }
       if (matchedTokens.isNotEmpty && tokenDiscovery == null) {
         tokenDiscovery = current;
       }
     }
-    return tokenDiscovery;
+    if (tokenDiscovery != null) {
+      return _CandidateDiscoveryResult.accepted(tokenDiscovery);
+    }
+    return hasSearchableText
+        ? const _CandidateDiscoveryResult.noTokenOverlap()
+        : const _CandidateDiscoveryResult.noText();
   }
+
+  static const int _catalogPreviewLimit = 5;
 }
 
 class _CandidateDiscovery {
@@ -132,4 +218,22 @@ class _CandidateDiscovery {
 
   final ProductMatchReason reason;
   final ProductMatchEvidence evidence;
+}
+
+enum _CandidateDiscoveryOutcome { accepted, noText, noTokenOverlap }
+
+class _CandidateDiscoveryResult {
+  const _CandidateDiscoveryResult.accepted(this.discovery)
+      : outcome = _CandidateDiscoveryOutcome.accepted;
+
+  const _CandidateDiscoveryResult.noText()
+      : outcome = _CandidateDiscoveryOutcome.noText,
+        discovery = null;
+
+  const _CandidateDiscoveryResult.noTokenOverlap()
+      : outcome = _CandidateDiscoveryOutcome.noTokenOverlap,
+        discovery = null;
+
+  final _CandidateDiscoveryOutcome outcome;
+  final _CandidateDiscovery? discovery;
 }

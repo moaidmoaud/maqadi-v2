@@ -3,12 +3,6 @@ import '../domain/product_match_candidate.dart';
 import '../domain/product_match_trace.dart';
 import 'candidate_generation_service.dart';
 
-enum CandidateGenerationEmptyReason {
-  noProductText,
-  emptyCatalog,
-  noValidCandidates,
-}
-
 class CandidateGenerationDebugCandidate {
   const CandidateGenerationDebugCandidate({
     required this.candidate,
@@ -27,14 +21,19 @@ class CandidateGenerationDebugLine {
     required this.originalProductText,
     required this.trace,
     required Iterable<CandidateGenerationDebugCandidate> candidates,
-    required this.emptyReason,
-  }) : candidates = List.unmodifiable(candidates);
+    Iterable<String> duplicateNormalizedQueryLineIds = const [],
+  })  : candidates = List.unmodifiable(candidates),
+        duplicateNormalizedQueryLineIds =
+            List.unmodifiable(duplicateNormalizedQueryLineIds);
 
   final String receiptLineId;
   final String? originalProductText;
   final ProductMatchTrace trace;
   final List<CandidateGenerationDebugCandidate> candidates;
-  final CandidateGenerationEmptyReason? emptyReason;
+  final List<String> duplicateNormalizedQueryLineIds;
+
+  bool get hasDuplicateNormalizedQuery =>
+      duplicateNormalizedQueryLineIds.length > 1;
 }
 
 class CandidateGenerationDebugService {
@@ -50,7 +49,7 @@ class CandidateGenerationDebugService {
   Future<List<CandidateGenerationDebugLine>> inspect(
     List<ReceiptLine> lines,
   ) async {
-    final results = <CandidateGenerationDebugLine>[];
+    final inspected = <CandidateGenerationDebugLine>[];
     for (final line in lines) {
       final originalText = await _textResolver.resolve(line);
       ProductMatchTrace? trace;
@@ -71,30 +70,32 @@ class CandidateGenerationDebugService {
           generationOrder: index + 1,
         ));
       }
-      results.add(CandidateGenerationDebugLine(
+      inspected.add(CandidateGenerationDebugLine(
         receiptLineId: line.id,
         originalProductText: originalText,
         trace: generatedTrace,
         candidates: candidates,
-        emptyReason: _emptyReason(originalText, generatedTrace, generated),
       ));
     }
-    return List.unmodifiable(results);
-  }
-
-  CandidateGenerationEmptyReason? _emptyReason(
-    String? originalText,
-    ProductMatchTrace trace,
-    List<ProductMatchCandidate> candidates,
-  ) {
-    if (candidates.isNotEmpty) return null;
-    if (originalText == null || trace.normalizedQuery?.isEmpty != false) {
-      return CandidateGenerationEmptyReason.noProductText;
+    final lineIdsByQuery = <String, List<String>>{};
+    for (final result in inspected) {
+      final query = result.trace.normalizedQuery ?? '';
+      if (query.isEmpty) continue;
+      lineIdsByQuery.putIfAbsent(query, () => <String>[]).add(
+            result.receiptLineId,
+          );
     }
-    if (trace.evaluationOrder.isEmpty) {
-      return CandidateGenerationEmptyReason.emptyCatalog;
-    }
-    return CandidateGenerationEmptyReason.noValidCandidates;
+    return List.unmodifiable([
+      for (final result in inspected)
+        CandidateGenerationDebugLine(
+          receiptLineId: result.receiptLineId,
+          originalProductText: result.originalProductText,
+          trace: result.trace,
+          candidates: result.candidates,
+          duplicateNormalizedQueryLineIds:
+              lineIdsByQuery[result.trace.normalizedQuery] ?? const [],
+        ),
+    ]);
   }
 }
 

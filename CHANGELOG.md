@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 8.2.1B — Candidate Generation Runtime Diagnosis
+
+### Normalization and diagnostics
+- Hardened Product Matching v2 normalization to preserve base Latin letters from accented OCR text and apply a conservative, traceable zero-to-letter correction only inside safe alphabetic tokens while preserving Arabic and numeric product values.
+- Added typed catalog diagnostics for empty, invalid, and unmatched catalogs, including evaluated/rejected/accepted counts, duplicate IDs, and a deterministic normalized-name preview.
+- Added debug visibility for original, pre-correction, and final query text, applied normalization operations, and duplicate normalized queries without changing candidate ranking, selection, Product Matching v1, Receipt Understanding, Receipt Line Builder, calibration, or benchmarks.
+
 ## Phase 8.2.1A — Candidate Generation Debug UI
 
 ### Real-receipt diagnostics

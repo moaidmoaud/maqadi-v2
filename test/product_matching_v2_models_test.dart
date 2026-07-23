@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:maqadi_v2/product_matching_v2/domain/candidate_generation_diagnostics.dart';
 import 'package:maqadi_v2/product_matching_v2/domain/product_match_candidate.dart';
 import 'package:maqadi_v2/product_matching_v2/domain/product_match_evidence.dart';
 import 'package:maqadi_v2/product_matching_v2/domain/product_match_reason.dart';
@@ -60,7 +61,30 @@ void main() {
         rejectedCandidates: [rejectedCandidate],
         evidence: const {'source': 'receipt-line'},
         finalDecision: ProductMatchReason.normalizedMatch,
+        originalQueryText: 'MÏLK',
+        preCorrectionNormalizedQuery: 'milk',
         normalizedQuery: 'milk',
+        appliedNormalizationOperations: const [
+          CandidateNormalizationOperation.lowercased,
+          CandidateNormalizationOperation.foldedAccentedLatin,
+        ],
+        candidateGenerationDiagnostics: CandidateGenerationDiagnostics(
+          reason: CandidateGenerationDiagnosticReason.candidatesGenerated,
+          catalogEntryCount: 2,
+          validCatalogEntryCount: 2,
+          invalidCatalogEntryCount: 0,
+          duplicateProductIdCount: 0,
+          evaluatedEntryCount: 2,
+          rejectedNoTextCount: 0,
+          rejectedNoTokenOverlapCount: 0,
+          acceptedCount: 2,
+          catalogPreview: const [
+            CandidateCatalogPreviewEntry(
+              productId: 'product-1',
+              normalizedName: 'milk',
+            ),
+          ],
+        ),
         generatedCandidateCount: 2,
         generatedCandidateIds: const ['product-1', 'product-2'],
         generationOrder: const ['product-1', 'product-2'],
@@ -80,6 +104,19 @@ void main() {
     expect(restored.trace.winningCandidate?.productId, 'product-1');
     expect(restored.trace.rejectedCandidates.single.productId, 'product-2');
     expect(restored.trace.normalizedQuery, 'milk');
+    expect(restored.trace.originalQueryText, 'MÏLK');
+    expect(restored.trace.preCorrectionNormalizedQuery, 'milk');
+    expect(
+      restored.trace.appliedNormalizationOperations,
+      [
+        CandidateNormalizationOperation.lowercased,
+        CandidateNormalizationOperation.foldedAccentedLatin,
+      ],
+    );
+    expect(
+      restored.trace.candidateGenerationDiagnostics!.reason,
+      CandidateGenerationDiagnosticReason.candidatesGenerated,
+    );
     expect(restored.trace.generatedCandidateCount, 2);
     expect(restored.trace.generatedCandidateIds, ['product-1', 'product-2']);
     expect(

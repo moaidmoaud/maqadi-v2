@@ -66,8 +66,17 @@ void main() {
     expect(find.textContaining('Receipt Line:'), findsOneWidget);
     expect(
         find.text('Original product text:  FRESH,   MILK! '), findsOneWidget);
-    expect(find.text('Normalized query: fresh milk'), findsOneWidget);
+    expect(
+      find.text('Pre-correction normalized text: fresh milk'),
+      findsOneWidget,
+    );
+    expect(find.text('Final normalized query: fresh milk'), findsOneWidget);
     expect(find.text('Candidate count: 2'), findsOneWidget);
+    expect(find.text('Catalog entry count: 2'), findsOneWidget);
+    expect(find.text('Valid catalog entry count: 2'), findsOneWidget);
+    expect(find.text('Invalid catalog entry count: 0'), findsOneWidget);
+    expect(find.text('Entries evaluated: 2'), findsOneWidget);
+    expect(find.text('Accepted: 2'), findsOneWidget);
     expect(find.text('Ranking: Not executed'), findsOneWidget);
     expect(find.text('Selection: Not executed'), findsOneWidget);
     expect(find.byKey(const ValueKey('generated-candidate-exact')),
@@ -84,7 +93,7 @@ void main() {
     expect(find.text('Catalog lookup: catalogName'), findsNWidgets(2));
   });
 
-  testWidgets('shows no-product-text and no-valid-candidates line reasons',
+  testWidgets('shows no-product-text and no-candidate-match line reasons',
       (tester) async {
     final elements = [
       receiptElement(
@@ -110,7 +119,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('candidate-generation-debug-results')),
         findsOneWidget);
-    expect(find.text('No valid candidates'), findsOneWidget);
+    expect(find.text('No candidate match'), findsOneWidget);
     expect(find.text('No product text'), findsWidgets);
     expect(find.text('Candidate count: 0'), findsNWidgets(2));
   });
@@ -131,6 +140,59 @@ void main() {
     expect(find.text('Empty catalog'), findsOneWidget);
     expect(find.text('Ranking: Not executed'), findsOneWidget);
     expect(find.text('Selection: Not executed'), findsOneWidget);
+  });
+
+  testWidgets('identifies duplicate normalized queries without merging lines',
+      (tester) async {
+    final elements = [
+      receiptElement(
+        'product-1',
+        ReceiptElementType.productName,
+        text: 'GÄRLIC -BAG',
+        width: 40,
+      ),
+      receiptElement('price-1', ReceiptElementType.price, x: 45),
+      receiptElement(
+        'product-2',
+        ReceiptElementType.productName,
+        text: 'GARLIC -BAG',
+        y: 30,
+        width: 40,
+      ),
+      receiptElement('price-2', ReceiptElementType.price, x: 45, y: 30),
+    ];
+    final lines = const ReceiptLineBuilderEngine().build(elements).lines;
+    final service = CandidateGenerationDebugService(
+      catalog: _Catalog(const []),
+      textResolver: MappedReceiptLineTextResolver({
+        for (final element in elements) element.id: element.text,
+      }),
+    );
+    final inspected = await service.inspect(lines);
+    await tester.pumpWidget(MaterialApp(
+      home: CandidateGenerationDebugScreen(
+        service: service,
+        lines: lines,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(lines, hasLength(2));
+    expect(inspected, hasLength(2));
+    expect(
+      inspected.every(
+        (value) =>
+            value.hasDuplicateNormalizedQuery &&
+            value.duplicateNormalizedQueryLineIds.length == 2,
+      ),
+      isTrue,
+    );
+    expect(
+      find.text('Duplicate normalized query: garlic bag'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Related Receipt Line IDs:'), findsOneWidget);
+    expect(find.text('Candidate count: 0'), findsOneWidget);
   });
 }
 
