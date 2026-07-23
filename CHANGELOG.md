@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 9.1 — Receipt Extraction Benchmark
+
+### Read-only extraction reliability diagnostics
+- Added an isolated benchmark that measures OCR blocks, receipt elements and lines, usable product-text coverage, structurally recoverable product lines, duplicates, and empty product text from already-produced extraction results.
+- Added deterministic typed failure classification and JSON-safe diagnostics for every line that reaches the benchmark without usable product text.
+- Added a read-only benchmark screen with receipt summary, overall metrics, failure breakdown, and missing-line evidence without changing OCR, Receipt Understanding, Receipt Line Builder, Product Matching v2, calibration, or existing benchmarks.
+
 ## Phase 8.2.3 — Decision Engine
 
 ### Deterministic product selection
