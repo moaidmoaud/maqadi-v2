@@ -168,13 +168,23 @@ class CandidateGenerationService {
   ) {
     _CandidateDiscovery? tokenDiscovery;
     var hasSearchableText = false;
-    final texts = <(String, ProductMatchDiscoverySource)>[
-      (product.displayName, ProductMatchDiscoverySource.catalogName),
+    final texts = <_CatalogSearchText>[
+      _CatalogSearchText(
+        text: product.displayName,
+        normalizedText: product.normalizedCanonicalName.isNotEmpty
+            ? product.normalizedCanonicalName
+            : _normalizer.normalize(product.displayName),
+        source: ProductMatchDiscoverySource.catalogName,
+      ),
       for (final alias in product.aliases)
-        (alias, ProductMatchDiscoverySource.catalogAlias),
+        _CatalogSearchText(
+          text: alias,
+          normalizedText: _normalizedAlias(product, alias),
+          source: ProductMatchDiscoverySource.catalogAlias,
+        ),
     ];
-    for (final (text, source) in texts) {
-      final normalized = _normalizer.normalize(text);
+    for (final text in texts) {
+      final normalized = text.normalizedText;
       if (normalized.isEmpty) continue;
       hasSearchableText = true;
       final matchedTokens = normalized
@@ -192,7 +202,11 @@ class CandidateGenerationService {
           normalizedCatalogText: normalized,
           matchedTokens: matchedTokens,
           exactNormalizedMatch: exact,
-          discoverySource: source,
+          discoverySource: text.source,
+          matchedCatalogText: text.text,
+          matchedAlias: text.source == ProductMatchDiscoverySource.catalogAlias
+              ? text.text
+              : null,
         ),
       );
       if (exact) {
@@ -210,7 +224,26 @@ class CandidateGenerationService {
         : const _CandidateDiscoveryResult.noText();
   }
 
+  String _normalizedAlias(ProductCatalogEntry product, String alias) {
+    for (final entry in product.normalizedAliasIndex.entries) {
+      if (entry.value.contains(alias)) return entry.key;
+    }
+    return _normalizer.normalize(alias);
+  }
+
   static const int _catalogPreviewLimit = 5;
+}
+
+class _CatalogSearchText {
+  const _CatalogSearchText({
+    required this.text,
+    required this.normalizedText,
+    required this.source,
+  });
+
+  final String text;
+  final String normalizedText;
+  final ProductMatchDiscoverySource source;
 }
 
 class _CandidateDiscovery {

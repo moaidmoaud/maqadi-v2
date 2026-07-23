@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 8.2.1C — Catalog Aliases & Language Bridge
+
+### Explicit bilingual catalog discovery
+- Added immutable normalized canonical-name and alias indexes to Product Matching v2 catalog entries, with JSON-safe serialization and duplicate-alias protection.
+- Added a v2-only explicit English alias bridge for the existing Arabic garlic, potato, and cooking-cream catalog entries without introducing translation, fuzzy matching, or changes to Product Matching v1.
+- Extended candidate evidence and debug diagnostics to show whether discovery used the canonical name or an alias and to display the exact matched alias while leaving ranking and selection unexecuted.
+
 ## Phase 8.2.1B — Candidate Generation Runtime Diagnosis
 
 ### Normalization and diagnostics

@@ -214,7 +214,7 @@ void main() {
     ProductMatchTrace? trace;
     final service = CandidateGenerationService(
       catalog: const CatalogProductCandidateCatalog(),
-      textResolver: _Resolver('Garlic Bag'),
+      textResolver: _Resolver('Unlisted English Product'),
       onTrace: (value) => trace = value,
     );
 

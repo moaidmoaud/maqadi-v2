@@ -91,6 +91,30 @@ void main() {
     expect(find.text('Exact normalized match: true'), findsOneWidget);
     expect(find.text('Matched tokens: fresh, milk'), findsOneWidget);
     expect(find.text('Catalog lookup: catalogName'), findsNWidgets(2));
+    expect(find.text('Matched Through: Canonical Name'), findsNWidgets(2));
+    expect(find.text('Matched Alias: None'), findsNWidgets(2));
+  });
+
+  testWidgets('renders the exact alias used for discovery', (tester) async {
+    final elements = productRow();
+    final lines = const ReceiptLineBuilderEngine().build(elements).lines;
+    await tester.pumpWidget(_debugApp(
+      lines: lines,
+      resolver: _Resolver('Garlic Bag'),
+      catalog: _Catalog([
+        ProductCatalogEntry(
+          id: 'garlic',
+          displayName: 'ثوم',
+          aliases: const ['garlic bag'],
+        ),
+      ]),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Matched Through: Alias'), findsOneWidget);
+    expect(find.text('Matched Alias: garlic bag'), findsOneWidget);
+    expect(find.text('Ranking: Not executed'), findsOneWidget);
+    expect(find.text('Selection: Not executed'), findsOneWidget);
   });
 
   testWidgets('shows no-product-text and no-candidate-match line reasons',
@@ -218,4 +242,13 @@ class _Catalog implements ProductCandidateCatalog {
 
   @override
   Future<List<ProductCatalogEntry>> readProducts() async => products;
+}
+
+class _Resolver implements ReceiptLineProductTextResolver {
+  const _Resolver(this.value);
+
+  final String value;
+
+  @override
+  Future<String?> resolve(ReceiptLine line) async => value;
 }

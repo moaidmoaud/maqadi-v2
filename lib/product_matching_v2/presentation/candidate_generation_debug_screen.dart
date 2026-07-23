@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../receipt_line_builder/domain/receipt_line.dart';
 import '../application/candidate_generation_debug_service.dart';
 import '../domain/candidate_generation_diagnostics.dart';
+import '../domain/product_match_evidence.dart';
 
 class CandidateGenerationDebugScreen extends StatefulWidget {
   const CandidateGenerationDebugScreen({
@@ -262,6 +263,17 @@ class _CandidateCard extends StatelessWidget {
             _Field(
               label: 'Catalog lookup',
               value: evidence.discoverySource.name,
+            ),
+            _Field(
+              label: 'Matched Through',
+              value: evidence.discoverySource ==
+                      ProductMatchDiscoverySource.catalogAlias
+                  ? 'Alias'
+                  : 'Canonical Name',
+            ),
+            _Field(
+              label: 'Matched Alias',
+              value: evidence.matchedAlias ?? 'None',
             ),
           ],
         ),
