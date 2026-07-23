@@ -52,4 +52,20 @@ void main() {
     expect(source, isNot(contains('.sort(')));
     expect(source, isNot(contains('fuzzy')));
   });
+
+  test('ranking consumes result evidence without selection or fuzzy matching',
+      () {
+    final source = File(
+      'lib/product_matching_v2/engine/product_ranking_engine.dart',
+    ).readAsStringSync();
+
+    expect(
+        source, contains('ProductMatchResult rank(ProductMatchResult input)'));
+    expect(source, contains('candidate.evidence'));
+    expect(source, contains('winningCandidate: null'));
+    expect(source, contains('matchedProduct: null'));
+    expect(source, isNot(contains('fuzzy')));
+    expect(source, isNot(contains('repository')));
+    expect(source, isNot(contains('package:flutter')));
+  });
 }

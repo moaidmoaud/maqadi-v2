@@ -77,7 +77,7 @@ void main() {
     expect(find.text('Invalid catalog entry count: 0'), findsOneWidget);
     expect(find.text('Entries evaluated: 2'), findsOneWidget);
     expect(find.text('Accepted: 2'), findsOneWidget);
-    expect(find.text('Ranking: Not executed'), findsOneWidget);
+    expect(find.text('Ranking: Executed'), findsOneWidget);
     expect(find.text('Selection: Not executed'), findsOneWidget);
     expect(find.byKey(const ValueKey('generated-candidate-exact')),
         findsOneWidget);
@@ -85,8 +85,12 @@ void main() {
         findsOneWidget);
     expect(find.text('Candidate type: exactMatch'), findsOneWidget);
     expect(find.text('Evaluation / generation order: 1 / 1'), findsOneWidget);
-    expect(find.text('Score: 0.0'), findsNWidgets(2));
+    expect(find.text('Rank: 1'), findsOneWidget);
+    expect(find.text('Rank: 2'), findsOneWidget);
+    expect(find.text('Score: 0.95'), findsOneWidget);
+    expect(find.text('Score: 0.3'), findsOneWidget);
     expect(find.text('Confidence: 0.0'), findsNWidgets(2));
+    expect(find.textContaining('Ranking Evidence:'), findsNWidgets(2));
     expect(find.text('Normalized text matched: fresh milk'), findsOneWidget);
     expect(find.text('Exact normalized match: true'), findsOneWidget);
     expect(find.text('Matched tokens: fresh, milk'), findsOneWidget);
@@ -113,7 +117,7 @@ void main() {
 
     expect(find.text('Matched Through: Alias'), findsOneWidget);
     expect(find.text('Matched Alias: garlic bag'), findsOneWidget);
-    expect(find.text('Ranking: Not executed'), findsOneWidget);
+    expect(find.text('Ranking: Executed'), findsOneWidget);
     expect(find.text('Selection: Not executed'), findsOneWidget);
   });
 
@@ -162,7 +166,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Empty catalog'), findsOneWidget);
-    expect(find.text('Ranking: Not executed'), findsOneWidget);
+    expect(find.text('Ranking: Executed'), findsOneWidget);
     expect(find.text('Selection: Not executed'), findsOneWidget);
   });
 

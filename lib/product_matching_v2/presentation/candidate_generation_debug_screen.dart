@@ -185,7 +185,7 @@ class _LineCard extends StatelessWidget {
                       )
                       .join(' | '),
             ),
-            const _Field(label: 'Ranking', value: 'Not executed'),
+            const _Field(label: 'Ranking', value: 'Executed'),
             const _Field(label: 'Selection', value: 'Not executed'),
             if (result.hasDuplicateNormalizedQuery) ...[
               _Field(
@@ -229,6 +229,7 @@ class _CandidateCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final candidate = value.candidate;
     final evidence = candidate.evidence;
+    final rankingEvidence = value.rankingEvidence;
     return Card.outlined(
       key: ValueKey('generated-candidate-${candidate.productId}'),
       child: Padding(
@@ -241,6 +242,7 @@ class _CandidateCard extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
             _Field(label: 'Product ID', value: candidate.productId),
+            _Field(label: 'Rank', value: '${value.rank}'),
             _Field(label: 'Candidate type', value: candidate.matchReason.name),
             _Field(
               label: 'Evaluation / generation order',
@@ -248,6 +250,16 @@ class _CandidateCard extends StatelessWidget {
             ),
             _Field(label: 'Score', value: '${candidate.matchingScore}'),
             _Field(label: 'Confidence', value: '${candidate.confidence}'),
+            _Field(
+              label: 'Ranking Evidence',
+              value: rankingEvidence.factors
+                  .map(
+                    (factor) => '${factor.type.name}: value=${factor.value}, '
+                        'weight=${factor.weight}, '
+                        'contribution=${factor.contribution}',
+                  )
+                  .join(' | '),
+            ),
             _Field(
               label: 'Normalized text matched',
               value: evidence.normalizedCatalogText,

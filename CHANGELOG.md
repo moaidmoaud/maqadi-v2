@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 8.2.2 — Ranking Engine
+
+### Deterministic candidate ranking
+- Added a Product Matching v2 ranking engine and service that score generated candidates using only canonical/alias source, exact normalized matches, token coverage, and alias specificity.
+- Added immutable, JSON-safe per-factor ranking evidence plus stable before/after ordering and equal-rank preservation for tied scores.
+- Extended the Candidate Generation debug view with rank, final score, and factor evidence while keeping selection and winning-candidate fields explicitly unexecuted.
+
 ## Phase 8.2.1C — Catalog Aliases & Language Bridge
 
 ### Explicit bilingual catalog discovery

@@ -2,6 +2,7 @@ import 'candidate_generation_diagnostics.dart';
 import 'product_match_candidate.dart';
 import 'product_match_evidence.dart';
 import 'product_match_reason.dart';
+import 'product_ranking_evidence.dart';
 
 class ProductMatchTrace {
   ProductMatchTrace({
@@ -21,6 +22,9 @@ class ProductMatchTrace {
     Iterable<CandidateNormalizationOperation> appliedNormalizationOperations =
         const [],
     this.candidateGenerationDiagnostics,
+    Iterable<String> candidateOrderBeforeRanking = const [],
+    Iterable<String> candidateOrderAfterRanking = const [],
+    Map<String, ProductCandidateRankingEvidence> rankingEvidence = const {},
   })  : evaluationOrder = List.unmodifiable(evaluationOrder),
         candidateRanking = List.unmodifiable(candidateRanking),
         rejectedCandidates = List.unmodifiable(rejectedCandidates),
@@ -29,7 +33,12 @@ class ProductMatchTrace {
         generationOrder = List.unmodifiable(generationOrder),
         discoveryEvidence = Map.unmodifiable(discoveryEvidence),
         appliedNormalizationOperations =
-            List.unmodifiable(appliedNormalizationOperations);
+            List.unmodifiable(appliedNormalizationOperations),
+        candidateOrderBeforeRanking =
+            List.unmodifiable(candidateOrderBeforeRanking),
+        candidateOrderAfterRanking =
+            List.unmodifiable(candidateOrderAfterRanking),
+        rankingEvidence = Map.unmodifiable(rankingEvidence);
 
   factory ProductMatchTrace.fromJson(Map<String, Object?> json) =>
       ProductMatchTrace(
@@ -89,6 +98,21 @@ class ProductMatchTrace {
                     json['candidateGenerationDiagnostics']!
                         as Map<String, Object?>,
                   ),
+        candidateOrderBeforeRanking:
+            (json['candidateOrderBeforeRanking'] as List<Object?>? ?? const [])
+                .cast(),
+        candidateOrderAfterRanking:
+            (json['candidateOrderAfterRanking'] as List<Object?>? ?? const [])
+                .cast(),
+        rankingEvidence:
+            (json['rankingEvidence'] as Map<Object?, Object?>? ?? const {}).map(
+          (key, value) => MapEntry(
+            key! as String,
+            ProductCandidateRankingEvidence.fromJson(
+              value! as Map<String, Object?>,
+            ),
+          ),
+        ),
       );
 
   final List<String> evaluationOrder;
@@ -106,6 +130,9 @@ class ProductMatchTrace {
   final String? preCorrectionNormalizedQuery;
   final List<CandidateNormalizationOperation> appliedNormalizationOperations;
   final CandidateGenerationDiagnostics? candidateGenerationDiagnostics;
+  final List<String> candidateOrderBeforeRanking;
+  final List<String> candidateOrderAfterRanking;
+  final Map<String, ProductCandidateRankingEvidence> rankingEvidence;
 
   Map<String, Object?> toJson() => {
         'evaluationOrder': evaluationOrder,
@@ -133,5 +160,11 @@ class ProductMatchTrace {
         ],
         'candidateGenerationDiagnostics':
             candidateGenerationDiagnostics?.toJson(),
+        'candidateOrderBeforeRanking': candidateOrderBeforeRanking,
+        'candidateOrderAfterRanking': candidateOrderAfterRanking,
+        'rankingEvidence': {
+          for (final entry in rankingEvidence.entries)
+            entry.key: entry.value.toJson(),
+        },
       };
 }
