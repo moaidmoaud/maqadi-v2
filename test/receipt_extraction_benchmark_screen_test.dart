@@ -73,6 +73,16 @@ void main() {
     );
     expect(find.text('Orphan Recovery Summary'), findsOneWidget);
     expect(find.text('Unrecoverable: 1'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Recovery comparison'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Recovery comparison'), findsOneWidget);
+    expect(find.text('Before Recovery: 50.0%'), findsOneWidget);
+    expect(find.text('After Recovery: 50.0%'), findsOneWidget);
+    expect(find.text('Recovered Orphans: 0'), findsOneWidget);
+    expect(find.text('Remaining Orphans: 1'), findsOneWidget);
   });
 
   testWidgets('shows full coverage with an explicit empty missing-line state',

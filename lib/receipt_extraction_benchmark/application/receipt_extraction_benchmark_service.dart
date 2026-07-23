@@ -1,5 +1,6 @@
 import '../../orphan_line_diagnostics/application/orphan_line_diagnostics_service.dart';
 import '../../orphan_line_diagnostics/domain/orphan_line_diagnostic.dart';
+import '../../orphan_line_recovery/application/orphan_line_recovery_service.dart';
 import '../../receipt_line_builder/domain/receipt_line.dart';
 import '../../receipt_line_builder/domain/receipt_line_completeness.dart';
 import '../../receipt_understanding/domain/receipt_element.dart';
@@ -11,9 +12,13 @@ class ReceiptExtractionBenchmarkService {
   const ReceiptExtractionBenchmarkService({
     OrphanLineDiagnosticsService orphanDiagnosticsService =
         const OrphanLineDiagnosticsService(),
-  }) : _orphanDiagnosticsService = orphanDiagnosticsService;
+    OrphanLineRecoveryService orphanRecoveryService =
+        const OrphanLineRecoveryService(),
+  })  : _orphanDiagnosticsService = orphanDiagnosticsService,
+        _orphanRecoveryService = orphanRecoveryService;
 
   final OrphanLineDiagnosticsService _orphanDiagnosticsService;
+  final OrphanLineRecoveryService _orphanRecoveryService;
 
   Future<ReceiptExtractionBenchmarkResult> analyze(
     ReceiptExtractionBenchmarkInput input,
@@ -62,6 +67,19 @@ class ReceiptExtractionBenchmarkService {
       elements: input.understandingResult.elements,
       lineResult: input.lineResult,
     );
+    final recovery = await _orphanRecoveryService.recover(
+      elements: input.understandingResult.elements,
+      lineResult: input.lineResult,
+      diagnostics: orphanDiagnostics,
+    );
+    final beforeRecoveryCoverage = _lineCoverage(
+      input.lineResult.lines,
+      elementsById,
+    );
+    final afterRecoveryCoverage = _lineCoverage(
+      recovery.lines,
+      elementsById,
+    );
     final metrics = ReceiptExtractionMetrics(
       ocrTextBlocks: input.ocrResult.blocks.length,
       receiptElements: input.understandingResult.elements.length,
@@ -88,7 +106,28 @@ class ReceiptExtractionBenchmarkService {
       failureBreakdown: _failureBreakdown(missingLines),
       orphanRecoverySummary:
           OrphanRecoverySummary.fromDiagnostics(orphanDiagnostics),
+      recoveryComparison: ReceiptExtractionRecoveryComparison(
+        beforeRecoveryCoverage: beforeRecoveryCoverage,
+        afterRecoveryCoverage: afterRecoveryCoverage,
+        coverageImprovement: afterRecoveryCoverage - beforeRecoveryCoverage,
+        recoveredOrphans: recovery.recoveredOrphanCount,
+        remainingOrphans: recovery.remainingOrphanCount,
+      ),
     );
+  }
+
+  double _lineCoverage(
+    Iterable<ReceiptLine> lines,
+    Map<String, ReceiptElement> elementsById,
+  ) {
+    final values = lines.toList(growable: false);
+    if (values.isEmpty) return 0;
+    final withProductText = values.where((line) {
+      final product = _productElement(line, elementsById);
+      return product?.type == ReceiptElementType.productName &&
+          product!.text.trim().isNotEmpty;
+    }).length;
+    return withProductText / values.length;
   }
 
   ReceiptElement? _productElement(

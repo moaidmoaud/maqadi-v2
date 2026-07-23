@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../orphan_line_recovery/application/orphan_line_recovery_service.dart';
+import '../../orphan_line_recovery/domain/orphan_line_recovery_result.dart';
 import '../../receipt_line_builder/domain/receipt_line_result.dart';
 import '../../receipt_understanding/domain/receipt_element.dart';
 import '../application/orphan_line_diagnostics_service.dart';
@@ -11,11 +13,13 @@ class OrphanLineDiagnosticsScreen extends StatefulWidget {
     required this.service,
     required this.elements,
     required this.lineResult,
+    this.recoveryService = const OrphanLineRecoveryService(),
   });
 
   final OrphanLineDiagnosticsService service;
   final List<ReceiptElement> elements;
   final ReceiptLineResult lineResult;
+  final OrphanLineRecoveryService recoveryService;
 
   @override
   State<OrphanLineDiagnosticsScreen> createState() =>
@@ -25,6 +29,7 @@ class OrphanLineDiagnosticsScreen extends StatefulWidget {
 class _OrphanLineDiagnosticsScreenState
     extends State<OrphanLineDiagnosticsScreen> {
   List<OrphanLineDiagnostic>? _diagnostics;
+  OrphanLineRecoveryResult? _recovery;
   Object? _error;
 
   @override
@@ -36,6 +41,7 @@ class _OrphanLineDiagnosticsScreenState
   Future<void> _load() async {
     setState(() {
       _diagnostics = null;
+      _recovery = null;
       _error = null;
     });
     try {
@@ -43,8 +49,16 @@ class _OrphanLineDiagnosticsScreenState
         elements: widget.elements,
         lineResult: widget.lineResult,
       );
+      final recovery = await widget.recoveryService.recover(
+        elements: widget.elements,
+        lineResult: widget.lineResult,
+        diagnostics: diagnostics,
+      );
       if (!mounted) return;
-      setState(() => _diagnostics = diagnostics);
+      setState(() {
+        _diagnostics = diagnostics;
+        _recovery = recovery;
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = error);
@@ -73,7 +87,8 @@ class _OrphanLineDiagnosticsScreenState
       );
     }
     final diagnostics = _diagnostics;
-    if (diagnostics == null) {
+    final recovery = _recovery;
+    if (diagnostics == null || recovery == null) {
       return const Center(
         child: CircularProgressIndicator(
           key: ValueKey('orphan-line-diagnostics-loading'),
@@ -92,23 +107,30 @@ class _OrphanLineDiagnosticsScreenState
       itemCount: diagnostics.length,
       itemBuilder: (context, index) {
         final diagnostic = diagnostics[index];
+        final attempt = recovery.attempts.firstWhere(
+          (value) => value.originalOrphanId == diagnostic.orphanId,
+        );
         return Card(
           key: ValueKey('orphan-diagnostic-${diagnostic.orphanId}'),
           child: ListTile(
             title: Text(diagnostic.orphanId),
             subtitle: Text(
               '${_reasonLabel(diagnostic.rejectionReason)} • '
-              '${_recoveryLabel(diagnostic.recoveryPossibility)}',
+              '${_recoveryLabel(diagnostic.recoveryPossibility)}\n'
+              'Outcome: ${_outcomeLabel(attempt.outcome)}',
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showDetails(diagnostic),
+            onTap: () => _showDetails(diagnostic, attempt),
           ),
         );
       },
     );
   }
 
-  void _showDetails(OrphanLineDiagnostic diagnostic) {
+  void _showDetails(
+    OrphanLineDiagnostic diagnostic,
+    OrphanRecoveryAttempt attempt,
+  ) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -163,6 +185,41 @@ class _OrphanLineDiagnosticsScreenState
               rows: {
                 'Recoverable': _recoveryLabel(diagnostic.recoveryPossibility),
                 'Why': diagnostic.recoveryReason,
+              },
+            ),
+            _DetailSection(
+              title: 'Original Line',
+              rows: {
+                'Orphan ID': attempt.originalOrphanId,
+                'Elements': attempt.sourceElementIds.isEmpty
+                    ? 'None'
+                    : attempt.sourceElementIds.join(', '),
+              },
+            ),
+            _DetailSection(
+              title: 'Recovery Attempt',
+              rows: {
+                'Candidate line': attempt.candidateLineId ?? 'None',
+                'Candidate product':
+                    attempt.candidateProductElementId ?? 'None',
+                'Rule': _ruleLabel(attempt.rule),
+                'Confidence': _confidenceLabel(attempt.confidence),
+                'Outcome': _outcomeLabel(attempt.outcome),
+              },
+            ),
+            _DetailSection(
+              title: 'Recovered Line',
+              rows: {
+                'Line ID': attempt.recoveredLineId ?? 'Not recovered',
+                'Completeness':
+                    attempt.recoveredCompleteness?.name ?? 'Unrecoverable',
+              },
+            ),
+            _DetailSection(
+              title: 'Reason',
+              rows: {
+                'Decision': _decisionLabel(attempt.decisionReason),
+                'Summary': attempt.summary,
               },
             ),
           ],
@@ -222,3 +279,41 @@ String _nullableYesNo(bool? value) => value == null ? 'Unknown' : _yesNo(value);
 
 String _metric(double? value) =>
     value == null ? 'Unavailable' : value.toStringAsFixed(3);
+
+String _outcomeLabel(OrphanRecoveryOutcome value) => switch (value) {
+      OrphanRecoveryOutcome.recoveredComplete => 'Recovered Complete',
+      OrphanRecoveryOutcome.recoveredPartial => 'Recovered Partial',
+      OrphanRecoveryOutcome.unrecoverable => 'Unrecoverable',
+    };
+
+String _ruleLabel(OrphanRecoveryRule value) => switch (value) {
+      OrphanRecoveryRule.sameRowNearestProduct => 'Same row nearest product',
+      OrphanRecoveryRule.sameColumnNearestProduct =>
+        'Same column nearest product',
+      OrphanRecoveryRule.none => 'None',
+    };
+
+String _confidenceLabel(OrphanRecoveryConfidence value) => switch (value) {
+      OrphanRecoveryConfidence.high => 'High',
+      OrphanRecoveryConfidence.moderate => 'Moderate',
+      OrphanRecoveryConfidence.none => 'None',
+    };
+
+String _decisionLabel(OrphanRecoveryDecisionReason value) => switch (value) {
+      OrphanRecoveryDecisionReason.recoveredUniqueSameRow =>
+        'Recovered unique same-row candidate',
+      OrphanRecoveryDecisionReason.recoveredUniqueSameColumn =>
+        'Recovered unique same-column candidate',
+      OrphanRecoveryDecisionReason.noProductCandidate => 'No product candidate',
+      OrphanRecoveryDecisionReason.geometryUnavailable =>
+        'Geometry unavailable',
+      OrphanRecoveryDecisionReason.spatialRelationshipInsufficient =>
+        'Spatial relationship insufficient',
+      OrphanRecoveryDecisionReason.roleAlreadyAssigned =>
+        'Role already assigned',
+      OrphanRecoveryDecisionReason.multipleProductCandidates =>
+        'Multiple product candidates',
+      OrphanRecoveryDecisionReason.competingOrphans => 'Competing orphans',
+      OrphanRecoveryDecisionReason.unsupportedOrphanRole =>
+        'Unsupported orphan role',
+    };

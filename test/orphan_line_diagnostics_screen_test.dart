@@ -10,6 +10,7 @@ import 'package:maqadi_v2/receipt_understanding/domain/receipt_element.dart';
 import 'package:maqadi_v2/receipt_understanding/domain/receipt_element_type.dart';
 
 import 'receipt_line_builder_test_support.dart';
+import 'orphan_line_recovery_test_support.dart';
 
 void main() {
   final competingElements = [
@@ -89,6 +90,44 @@ void main() {
       find.byKey(const ValueKey('orphan-line-diagnostics-empty')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('renders original, attempt, recovered line, and reason',
+      (tester) async {
+    final fixture = sameRowPriceFixture();
+    await tester.pumpWidget(MaterialApp(
+      home: OrphanLineDiagnosticsScreen(
+        service: const OrphanLineDiagnosticsService(),
+        elements: fixture.elements,
+        lineResult: fixture.lineResult,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Outcome: Recovered Complete'), findsOneWidget);
+    await tester.tap(find.byType(ListTile).first);
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Original Line'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Original Line'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Recovery Attempt'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Recovery Attempt'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Recovered Line'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Recovered Line'), findsOneWidget);
+    expect(find.text('Outcome: Recovered Complete'), findsOneWidget);
+    expect(find.text('Reason'), findsOneWidget);
   });
 
   testWidgets('navigates from line debug using the existing line result',

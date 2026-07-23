@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 9.2B — Orphan Line Recovery Engine
+
+### Deterministic post-builder recovery
+- Added a diagnostics-driven recovery pass that runs after the unchanged Receipt Line Builder and deterministically attaches eligible orphan roles using existing same-row or same-column evidence.
+- Added immutable recovery outcomes, confidence, decision reasons, and serializable attempt traces so every orphan ends as recovered complete, recovered partial, or explicitly unrecoverable.
+- Extended orphan diagnostics and the Receipt Extraction Benchmark with before/after coverage, recovered-orphan, and remaining-orphan evidence without changing OCR, understanding, matching, calibration, or existing benchmark metrics.
+
 ## Phase 9.2A — Orphan Line Diagnostics
 
 ### Read-only orphan investigation

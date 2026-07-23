@@ -94,6 +94,50 @@ class ReceiptExtractionMetrics {
       };
 }
 
+class ReceiptExtractionRecoveryComparison {
+  const ReceiptExtractionRecoveryComparison({
+    required this.beforeRecoveryCoverage,
+    required this.afterRecoveryCoverage,
+    required this.coverageImprovement,
+    required this.recoveredOrphans,
+    required this.remainingOrphans,
+  });
+
+  const ReceiptExtractionRecoveryComparison.empty()
+      : beforeRecoveryCoverage = 0,
+        afterRecoveryCoverage = 0,
+        coverageImprovement = 0,
+        recoveredOrphans = 0,
+        remainingOrphans = 0;
+
+  factory ReceiptExtractionRecoveryComparison.fromJson(
+    Map<String, Object?> json,
+  ) =>
+      ReceiptExtractionRecoveryComparison(
+        beforeRecoveryCoverage:
+            (json['beforeRecoveryCoverage']! as num).toDouble(),
+        afterRecoveryCoverage:
+            (json['afterRecoveryCoverage']! as num).toDouble(),
+        coverageImprovement: (json['coverageImprovement']! as num).toDouble(),
+        recoveredOrphans: json['recoveredOrphans']! as int,
+        remainingOrphans: json['remainingOrphans']! as int,
+      );
+
+  final double beforeRecoveryCoverage;
+  final double afterRecoveryCoverage;
+  final double coverageImprovement;
+  final int recoveredOrphans;
+  final int remainingOrphans;
+
+  Map<String, Object> toJson() => {
+        'beforeRecoveryCoverage': beforeRecoveryCoverage,
+        'afterRecoveryCoverage': afterRecoveryCoverage,
+        'coverageImprovement': coverageImprovement,
+        'recoveredOrphans': recoveredOrphans,
+        'remainingOrphans': remainingOrphans,
+      };
+}
+
 class ReceiptExtractionBenchmarkResult {
   ReceiptExtractionBenchmarkResult({
     required this.receiptId,
@@ -102,6 +146,7 @@ class ReceiptExtractionBenchmarkResult {
     required Iterable<ReceiptExtractionMissingLine> missingLines,
     required Map<ReceiptExtractionMissingReason, int> failureBreakdown,
     this.orphanRecoverySummary = const OrphanRecoverySummary.empty(),
+    this.recoveryComparison = const ReceiptExtractionRecoveryComparison.empty(),
   })  : missingLines = List.unmodifiable(missingLines),
         failureBreakdown = Map.unmodifiable(failureBreakdown);
 
@@ -131,6 +176,11 @@ class ReceiptExtractionBenchmarkResult {
             : OrphanRecoverySummary.fromJson(
                 json['orphanRecoverySummary']! as Map<String, Object?>,
               ),
+        recoveryComparison: json['recoveryComparison'] == null
+            ? const ReceiptExtractionRecoveryComparison.empty()
+            : ReceiptExtractionRecoveryComparison.fromJson(
+                json['recoveryComparison']! as Map<String, Object?>,
+              ),
       );
 
   final String receiptId;
@@ -139,6 +189,7 @@ class ReceiptExtractionBenchmarkResult {
   final List<ReceiptExtractionMissingLine> missingLines;
   final Map<ReceiptExtractionMissingReason, int> failureBreakdown;
   final OrphanRecoverySummary orphanRecoverySummary;
+  final ReceiptExtractionRecoveryComparison recoveryComparison;
 
   Map<String, Object?> toJson() => {
         'receiptId': receiptId,
@@ -150,5 +201,6 @@ class ReceiptExtractionBenchmarkResult {
             entry.key.name: entry.value,
         },
         'orphanRecoverySummary': orphanRecoverySummary.toJson(),
+        'recoveryComparison': recoveryComparison.toJson(),
       };
 }

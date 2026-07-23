@@ -128,6 +128,21 @@ class _ReceiptExtractionBenchmarkScreenState
             'Unrecoverable': '${result.orphanRecoverySummary.unrecoverable}',
           },
         ),
+        _Section(
+          title: 'Recovery comparison',
+          rows: {
+            'Before Recovery':
+                _percent(result.recoveryComparison.beforeRecoveryCoverage),
+            'After Recovery':
+                _percent(result.recoveryComparison.afterRecoveryCoverage),
+            'Coverage Improvement':
+                _signedPercent(result.recoveryComparison.coverageImprovement),
+            'Recovered Orphans':
+                '${result.recoveryComparison.recoveredOrphans}',
+            'Remaining Orphans':
+                '${result.recoveryComparison.remainingOrphans}',
+          },
+        ),
         Text(
           'Missing product lines',
           style: Theme.of(context).textTheme.titleLarge,
@@ -186,6 +201,11 @@ class _Section extends StatelessWidget {
 }
 
 String _percent(double value) => '${(value * 100).toStringAsFixed(1)}%';
+
+String _signedPercent(double value) {
+  final prefix = value > 0 ? '+' : '';
+  return '$prefix${_percent(value)}';
+}
 
 String _reasonLabel(ReceiptExtractionMissingReason reason) => switch (reason) {
       ReceiptExtractionMissingReason.missingOcrText => 'Missing OCR text',

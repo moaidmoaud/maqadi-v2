@@ -77,8 +77,7 @@ class OrphanLineDiagnosticsService {
     final sameColumn = sourcePlacement?.columnIndex == null ||
             candidatePlacement?.columnIndex == null
         ? null
-        : sameRow == true &&
-            sourcePlacement!.columnIndex == candidatePlacement!.columnIndex;
+        : sourcePlacement!.columnIndex == candidatePlacement!.columnIndex;
     final horizontalGap = _horizontalGap(source, candidate, medianHeight);
     final verticalDistance = _verticalDistance(source, candidate, medianHeight);
     final verticalOverlap = _verticalOverlap(source, candidate);
