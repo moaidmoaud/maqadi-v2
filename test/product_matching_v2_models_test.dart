@@ -137,6 +137,10 @@ void main() {
         'multipleCandidates',
         'lowConfidence',
         'noCandidate',
+        'clearWinner',
+        'tie',
+        'insufficientEvidence',
+        'noCandidates',
       ],
     );
     expect(

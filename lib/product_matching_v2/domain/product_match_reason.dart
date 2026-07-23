@@ -6,4 +6,8 @@ enum ProductMatchReason {
   multipleCandidates,
   lowConfidence,
   noCandidate,
+  clearWinner,
+  tie,
+  insufficientEvidence,
+  noCandidates,
 }

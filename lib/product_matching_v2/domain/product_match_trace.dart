@@ -1,4 +1,5 @@
 import 'candidate_generation_diagnostics.dart';
+import 'product_decision.dart';
 import 'product_match_candidate.dart';
 import 'product_match_evidence.dart';
 import 'product_match_reason.dart';
@@ -25,6 +26,9 @@ class ProductMatchTrace {
     Iterable<String> candidateOrderBeforeRanking = const [],
     Iterable<String> candidateOrderAfterRanking = const [],
     Map<String, ProductCandidateRankingEvidence> rankingEvidence = const {},
+    this.runnerUpCandidate,
+    this.confidenceCalculation,
+    this.decisionStatus,
   })  : evaluationOrder = List.unmodifiable(evaluationOrder),
         candidateRanking = List.unmodifiable(candidateRanking),
         rejectedCandidates = List.unmodifiable(rejectedCandidates),
@@ -113,6 +117,21 @@ class ProductMatchTrace {
             ),
           ),
         ),
+        runnerUpCandidate: json['runnerUpCandidate'] == null
+            ? null
+            : ProductMatchCandidate.fromJson(
+                json['runnerUpCandidate']! as Map<String, Object?>,
+              ),
+        confidenceCalculation: json['confidenceCalculation'] == null
+            ? null
+            : ProductConfidenceCalculation.fromJson(
+                json['confidenceCalculation']! as Map<String, Object?>,
+              ),
+        decisionStatus: json['decisionStatus'] == null
+            ? null
+            : ProductDecisionStatus.values.byName(
+                json['decisionStatus']! as String,
+              ),
       );
 
   final List<String> evaluationOrder;
@@ -133,6 +152,9 @@ class ProductMatchTrace {
   final List<String> candidateOrderBeforeRanking;
   final List<String> candidateOrderAfterRanking;
   final Map<String, ProductCandidateRankingEvidence> rankingEvidence;
+  final ProductMatchCandidate? runnerUpCandidate;
+  final ProductConfidenceCalculation? confidenceCalculation;
+  final ProductDecisionStatus? decisionStatus;
 
   Map<String, Object?> toJson() => {
         'evaluationOrder': evaluationOrder,
@@ -166,5 +188,8 @@ class ProductMatchTrace {
           for (final entry in rankingEvidence.entries)
             entry.key: entry.value.toJson(),
         },
+        'runnerUpCandidate': runnerUpCandidate?.toJson(),
+        'confidenceCalculation': confidenceCalculation?.toJson(),
+        'decisionStatus': decisionStatus?.name,
       };
 }

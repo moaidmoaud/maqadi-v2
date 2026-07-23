@@ -68,4 +68,19 @@ void main() {
     expect(source, isNot(contains('repository')));
     expect(source, isNot(contains('package:flutter')));
   });
+
+  test('decision consumes ranked candidates without recalculating ranking', () {
+    final source = File(
+      'lib/product_matching_v2/engine/product_decision_engine.dart',
+    ).readAsStringSync();
+
+    expect(source,
+        contains('ProductMatchResult decide(ProductMatchResult ranked)'));
+    expect(source, contains('ranked.candidates'));
+    expect(source, isNot(contains('ProductRankingEngine')));
+    expect(source, isNot(contains('ProductRankingService')));
+    expect(source, isNot(contains('.sort(')));
+    expect(source, isNot(contains('repository')));
+    expect(source, isNot(contains('package:flutter')));
+  });
 }

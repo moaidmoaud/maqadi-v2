@@ -99,6 +99,9 @@ class _LineCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final diagnostics = result.trace.candidateGenerationDiagnostics!;
+    final confidence = result.trace.confidenceCalculation!;
+    final winner = result.trace.winningCandidate;
+    final runnerUp = result.trace.runnerUpCandidate;
     return Card(
       key: ValueKey('candidate-generation-line-${result.receiptLineId}'),
       child: Padding(
@@ -186,7 +189,42 @@ class _LineCard extends StatelessWidget {
                       .join(' | '),
             ),
             const _Field(label: 'Ranking', value: 'Executed'),
-            const _Field(label: 'Selection', value: 'Not executed'),
+            const _Field(label: 'Selection', value: 'Executed'),
+            _Field(
+              label: 'Winner',
+              value: winner == null
+                  ? 'None'
+                  : '${winner.productId}: ${winner.displayName}',
+            ),
+            _Field(
+              label: 'Confidence',
+              value: '${confidence.finalConfidence}',
+            ),
+            _Field(
+              label: 'Decision',
+              value: result.trace.decisionStatus!.name,
+            ),
+            _Field(
+              label: 'Reason',
+              value: result.trace.finalDecision.name,
+            ),
+            _Field(
+              label: 'Runner-up',
+              value: runnerUp == null
+                  ? 'None'
+                  : '${runnerUp.productId}: ${runnerUp.displayName}',
+            ),
+            _Field(
+              label: 'Confidence calculation',
+              value: 'rankingScore=${confidence.rankingScore} '
+                  '(weight=${confidence.rankingScoreWeight}), '
+                  'runnerUpScore=${confidence.runnerUpScore ?? 'None'}, '
+                  'separation=${confidence.separation} '
+                  '(weight=${confidence.separationWeight}), '
+                  'evidenceQuality=${confidence.evidenceQuality} '
+                  '(weight=${confidence.evidenceQualityWeight}), '
+                  'final=${confidence.finalConfidence}',
+            ),
             if (result.hasDuplicateNormalizedQuery) ...[
               _Field(
                 label: 'Duplicate normalized query',

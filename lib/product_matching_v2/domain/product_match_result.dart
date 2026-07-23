@@ -1,4 +1,5 @@
 import 'product_match_candidate.dart';
+import 'product_decision.dart';
 import 'product_match_reason.dart';
 import 'product_match_trace.dart';
 
@@ -13,6 +14,7 @@ class ProductMatchResult {
     required this.status,
     required this.decisionReason,
     required this.trace,
+    this.decisionStatus,
   })  : assert(finalConfidence == null ||
             (finalConfidence >= 0 && finalConfidence <= 1)),
         candidates = List.unmodifiable(candidates);
@@ -38,6 +40,11 @@ class ProductMatchResult {
         trace: ProductMatchTrace.fromJson(
           json['trace']! as Map<String, Object?>,
         ),
+        decisionStatus: json['decisionStatus'] == null
+            ? null
+            : ProductDecisionStatus.values.byName(
+                json['decisionStatus']! as String,
+              ),
       );
 
   final String receiptLineId;
@@ -47,6 +54,9 @@ class ProductMatchResult {
   final ProductMatchStatus status;
   final ProductMatchReason decisionReason;
   final ProductMatchTrace trace;
+  final ProductDecisionStatus? decisionStatus;
+
+  ProductMatchCandidate? get winningCandidate => trace.winningCandidate;
 
   Map<String, Object?> toJson() => {
         'receiptLineId': receiptLineId,
@@ -56,5 +66,6 @@ class ProductMatchResult {
         'status': status.name,
         'decisionReason': decisionReason.name,
         'trace': trace.toJson(),
+        'decisionStatus': decisionStatus?.name,
       };
 }

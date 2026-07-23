@@ -1,5 +1,13 @@
 # سجل التغييرات
 
+## Phase 8.2.3 — Decision Engine
+
+### Deterministic product selection
+- Added a Product Matching v2 decision engine and service that consume ranked candidates without recalculating scores or changing ranking order.
+- Added typed matched, needs-review, ambiguous, and no-match outcomes for clear winners, low-confidence evidence, ties, and empty candidate sets.
+- Added a serializable confidence breakdown based on ranking score, runner-up separation, and existing evidence quality, plus complete winner, runner-up, reason, and status trace diagnostics.
+- Extended the Product Matching v2 debug view with the executed decision, winner, runner-up, final confidence, and confidence calculation while preserving Product Matching v1 and all upstream receipt behavior.
+
 ## Phase 8.2.2 — Ranking Engine
 
 ### Deterministic candidate ranking

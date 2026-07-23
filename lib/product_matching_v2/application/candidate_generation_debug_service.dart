@@ -5,6 +5,7 @@ import '../domain/product_match_result.dart';
 import '../domain/product_match_trace.dart';
 import '../domain/product_ranking_evidence.dart';
 import 'candidate_generation_service.dart';
+import 'product_decision_service.dart';
 import 'product_ranking_service.dart';
 
 class CandidateGenerationDebugCandidate {
@@ -49,13 +50,16 @@ class CandidateGenerationDebugService {
     required ProductCandidateCatalog catalog,
     required ReceiptLineProductTextResolver textResolver,
     ProductRankingService rankingService = const ProductRankingService(),
+    ProductDecisionService decisionService = const ProductDecisionService(),
   })  : _catalog = catalog,
         _textResolver = textResolver,
-        _rankingService = rankingService;
+        _rankingService = rankingService,
+        _decisionService = decisionService;
 
   final ProductCandidateCatalog _catalog;
   final ReceiptLineProductTextResolver _textResolver;
   final ProductRankingService _rankingService;
+  final ProductDecisionService _decisionService;
 
   Future<List<CandidateGenerationDebugLine>> inspect(
     List<ReceiptLine> lines,
@@ -80,23 +84,24 @@ class CandidateGenerationDebugService {
         decisionReason: ProductMatchReason.notEvaluated,
         trace: generatedTrace,
       ));
-      final rankedTrace = ranked.trace;
+      final decided = _decisionService.decide(ranked);
+      final decidedTrace = decided.trace;
       final candidates = <CandidateGenerationDebugCandidate>[];
-      for (final candidate in ranked.candidates) {
+      for (final candidate in decided.candidates) {
         candidates.add(CandidateGenerationDebugCandidate(
           candidate: candidate,
           evaluationOrder:
-              rankedTrace.evaluationOrder.indexOf(candidate.productId) + 1,
+              decidedTrace.evaluationOrder.indexOf(candidate.productId) + 1,
           generationOrder:
-              rankedTrace.generationOrder.indexOf(candidate.productId) + 1,
-          rank: rankedTrace.rankingEvidence[candidate.productId]!.rank,
-          rankingEvidence: rankedTrace.rankingEvidence[candidate.productId]!,
+              decidedTrace.generationOrder.indexOf(candidate.productId) + 1,
+          rank: decidedTrace.rankingEvidence[candidate.productId]!.rank,
+          rankingEvidence: decidedTrace.rankingEvidence[candidate.productId]!,
         ));
       }
       inspected.add(CandidateGenerationDebugLine(
         receiptLineId: line.id,
         originalProductText: originalText,
-        trace: rankedTrace,
+        trace: decidedTrace,
         candidates: candidates,
       ));
     }

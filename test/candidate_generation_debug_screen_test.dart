@@ -78,7 +78,13 @@ void main() {
     expect(find.text('Entries evaluated: 2'), findsOneWidget);
     expect(find.text('Accepted: 2'), findsOneWidget);
     expect(find.text('Ranking: Executed'), findsOneWidget);
-    expect(find.text('Selection: Not executed'), findsOneWidget);
+    expect(find.text('Selection: Executed'), findsOneWidget);
+    expect(find.text('Winner: exact: Fresh Milk'), findsOneWidget);
+    expect(find.text('Confidence: 0.8825'), findsOneWidget);
+    expect(find.text('Decision: matched'), findsOneWidget);
+    expect(find.text('Reason: clearWinner'), findsOneWidget);
+    expect(find.text('Runner-up: token: Milk Powder'), findsOneWidget);
+    expect(find.textContaining('Confidence calculation:'), findsOneWidget);
     expect(find.byKey(const ValueKey('generated-candidate-exact')),
         findsOneWidget);
     expect(find.byKey(const ValueKey('generated-candidate-token')),
@@ -118,7 +124,7 @@ void main() {
     expect(find.text('Matched Through: Alias'), findsOneWidget);
     expect(find.text('Matched Alias: garlic bag'), findsOneWidget);
     expect(find.text('Ranking: Executed'), findsOneWidget);
-    expect(find.text('Selection: Not executed'), findsOneWidget);
+    expect(find.text('Selection: Executed'), findsOneWidget);
   });
 
   testWidgets('shows no-product-text and no-candidate-match line reasons',
@@ -148,8 +154,16 @@ void main() {
     expect(find.byKey(const ValueKey('candidate-generation-debug-results')),
         findsOneWidget);
     expect(find.text('No candidate match'), findsOneWidget);
-    expect(find.text('No product text'), findsWidgets);
-    expect(find.text('Candidate count: 0'), findsNWidgets(2));
+    expect(find.text('Candidate count: 0'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('candidate-generation-debug-results')),
+      const Offset(0, -800),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('No product text'), findsOneWidget);
+    expect(find.text('Candidate count: 0'), findsOneWidget);
   });
 
   testWidgets('shows an empty-catalog reason and no ranking or selection',
@@ -167,7 +181,7 @@ void main() {
 
     expect(find.text('Empty catalog'), findsOneWidget);
     expect(find.text('Ranking: Executed'), findsOneWidget);
-    expect(find.text('Selection: Not executed'), findsOneWidget);
+    expect(find.text('Selection: Executed'), findsOneWidget);
   });
 
   testWidgets('identifies duplicate normalized queries without merging lines',
