@@ -150,6 +150,52 @@ void main() {
       findsOneWidget,
     );
     expect(find.byTooltip('Receipt Reliability Gate'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('receipt-reliability-gate-inline-report')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(
+      find.byKey(const ValueKey('receipt-reliability-gate-inline-report')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('receipt-reliability-gate-inline-status')),
+      findsOneWidget,
+    );
+    expect(find.text('PASS'), findsOneWidget);
+    final inlineReport = find.byKey(
+      const ValueKey('receipt-reliability-gate-inline-report-text'),
+    );
+    expect(
+      find.descendant(
+        of: inlineReport,
+        matching: find.textContaining('Product Text Coverage'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: inlineReport,
+        matching: find.textContaining('Recovered Orphans'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: inlineReport,
+        matching: find.textContaining('Remaining Orphans'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: inlineReport,
+        matching: find.textContaining('UNCHANGED — PASS'),
+      ),
+      findsOneWidget,
+    );
+
     await tester.tap(
       find.byKey(const ValueKey('open-receipt-reliability-gate-report')),
     );

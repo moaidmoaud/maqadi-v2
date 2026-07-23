@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../receipt_reliability_gate/application/receipt_reliability_report_service.dart';
+import '../../receipt_reliability_gate/domain/receipt_reliability_gate_result.dart';
 import '../../receipt_reliability_gate/presentation/receipt_reliability_gate_report_screen.dart';
 import '../application/receipt_extraction_benchmark_service.dart';
 import '../domain/receipt_extraction_benchmark_input.dart';
@@ -26,8 +27,10 @@ class ReceiptExtractionBenchmarkScreen extends StatefulWidget {
 class _ReceiptExtractionBenchmarkScreenState
     extends State<ReceiptExtractionBenchmarkScreen> {
   ReceiptExtractionBenchmarkResult? _result;
+  ReceiptReliabilityGateResult? _reliabilityResult;
   Object? _error;
-  bool _openingReliabilityReport = false;
+  Object? _reliabilityError;
+  bool _loadingReliabilityReport = false;
 
   @override
   void initState() {
@@ -38,12 +41,15 @@ class _ReceiptExtractionBenchmarkScreenState
   Future<void> _load() async {
     setState(() {
       _result = null;
+      _reliabilityResult = null;
       _error = null;
+      _reliabilityError = null;
     });
     try {
       final result = await widget.service.analyze(widget.input);
       if (!mounted) return;
       setState(() => _result = result);
+      await _loadReliabilityReport(result);
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = error);
@@ -56,12 +62,11 @@ class _ReceiptExtractionBenchmarkScreenState
         appBar: AppBar(
           title: const Text('Receipt Extraction Benchmark'),
           actions: [
-            if (_result != null && widget.reliabilityReportService != null)
+            if (_reliabilityResult != null)
               IconButton(
                 key: const ValueKey('open-receipt-reliability-gate-report'),
                 tooltip: 'Receipt Reliability Gate',
-                onPressed:
-                    _openingReliabilityReport ? null : _openReliabilityReport,
+                onPressed: _openReliabilityReport,
                 icon: const Icon(Icons.verified_outlined),
               ),
           ],
@@ -69,28 +74,36 @@ class _ReceiptExtractionBenchmarkScreenState
         body: _body(),
       );
 
-  Future<void> _openReliabilityReport() async {
-    final extraction = _result;
+  Future<void> _loadReliabilityReport(
+    ReceiptExtractionBenchmarkResult extraction,
+  ) async {
     final service = widget.reliabilityReportService;
-    if (extraction == null || service == null) return;
-    setState(() => _openingReliabilityReport = true);
+    if (service == null) return;
+    setState(() {
+      _loadingReliabilityReport = true;
+      _reliabilityError = null;
+    });
     try {
       final result = await service.generate(
         input: widget.input,
         extraction: extraction,
       );
       if (!mounted) return;
-      await Navigator.of(context).push<void>(MaterialPageRoute<void>(
-        builder: (_) => ReceiptReliabilityGateReportScreen(result: result),
-      ));
-    } catch (_) {
+      setState(() => _reliabilityResult = result);
+    } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reliability report is unavailable.')),
-      );
+      setState(() => _reliabilityError = error);
     } finally {
-      if (mounted) setState(() => _openingReliabilityReport = false);
+      if (mounted) setState(() => _loadingReliabilityReport = false);
     }
+  }
+
+  void _openReliabilityReport() {
+    final result = _reliabilityResult;
+    if (result == null) return;
+    Navigator.of(context).push<void>(MaterialPageRoute<void>(
+      builder: (_) => ReceiptReliabilityGateReportScreen(result: result),
+    ));
   }
 
   Widget _body() {
@@ -184,6 +197,8 @@ class _ReceiptExtractionBenchmarkScreenState
                 '${result.recoveryComparison.remainingOrphans}',
           },
         ),
+        if (widget.reliabilityReportService != null)
+          _reliabilityReportSection(result),
         Text(
           'Missing product lines',
           style: Theme.of(context).textTheme.titleLarge,
@@ -211,6 +226,95 @@ class _ReceiptExtractionBenchmarkScreenState
             ),
           ),
       ],
+    );
+  }
+
+  Widget _reliabilityReportSection(
+    ReceiptExtractionBenchmarkResult extraction,
+  ) {
+    if (_loadingReliabilityReport) {
+      return const Card(
+        key: ValueKey('receipt-reliability-gate-inline-loading'),
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 12),
+              Text('Loading Reliability Gate report…'),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_reliabilityError != null) {
+      return Card(
+        key: const ValueKey('receipt-reliability-gate-inline-error'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Reliability Gate',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              const Text('Reliability report is unavailable.'),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () => _loadReliabilityReport(extraction),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final reliability = _reliabilityResult;
+    if (reliability == null) return const SizedBox.shrink();
+    return Card(
+      key: const ValueKey('receipt-reliability-gate-inline-report'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Reliability Gate',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  reliability.passed ? Icons.check_circle : Icons.error,
+                  color: reliability.passed ? Colors.green : Colors.red,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  reliability.passed ? 'PASS' : 'FAIL',
+                  key: const ValueKey(
+                    'receipt-reliability-gate-inline-status',
+                  ),
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SelectableText(
+              reliability.toHumanReadableReport(),
+              key: const ValueKey(
+                'receipt-reliability-gate-inline-report-text',
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
