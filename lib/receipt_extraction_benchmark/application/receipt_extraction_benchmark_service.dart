@@ -1,3 +1,5 @@
+import '../../orphan_line_diagnostics/application/orphan_line_diagnostics_service.dart';
+import '../../orphan_line_diagnostics/domain/orphan_line_diagnostic.dart';
 import '../../receipt_line_builder/domain/receipt_line.dart';
 import '../../receipt_line_builder/domain/receipt_line_completeness.dart';
 import '../../receipt_understanding/domain/receipt_element.dart';
@@ -6,7 +8,12 @@ import '../domain/receipt_extraction_benchmark_input.dart';
 import '../domain/receipt_extraction_benchmark_result.dart';
 
 class ReceiptExtractionBenchmarkService {
-  const ReceiptExtractionBenchmarkService();
+  const ReceiptExtractionBenchmarkService({
+    OrphanLineDiagnosticsService orphanDiagnosticsService =
+        const OrphanLineDiagnosticsService(),
+  }) : _orphanDiagnosticsService = orphanDiagnosticsService;
+
+  final OrphanLineDiagnosticsService _orphanDiagnosticsService;
 
   Future<ReceiptExtractionBenchmarkResult> analyze(
     ReceiptExtractionBenchmarkInput input,
@@ -51,6 +58,10 @@ class ReceiptExtractionBenchmarkService {
     final duplicateProductTextCount = _duplicateCount(productTexts);
     final linesContainingProductText = productTexts.length;
     final receiptLineCount = input.lineResult.lines.length;
+    final orphanDiagnostics = await _orphanDiagnosticsService.diagnose(
+      elements: input.understandingResult.elements,
+      lineResult: input.lineResult,
+    );
     final metrics = ReceiptExtractionMetrics(
       ocrTextBlocks: input.ocrResult.blocks.length,
       receiptElements: input.understandingResult.elements.length,
@@ -75,6 +86,8 @@ class ReceiptExtractionBenchmarkService {
       metrics: metrics,
       missingLines: missingLines,
       failureBreakdown: _failureBreakdown(missingLines),
+      orphanRecoverySummary:
+          OrphanRecoverySummary.fromDiagnostics(orphanDiagnostics),
     );
   }
 

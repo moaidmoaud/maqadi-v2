@@ -13,6 +13,8 @@ import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
 import 'models/shopping_models.dart';
 import 'models/stock_models.dart';
+import 'orphan_line_diagnostics/application/orphan_line_diagnostics_service.dart';
+import 'orphan_line_diagnostics/presentation/orphan_line_diagnostics_screen.dart';
 import 'shopping_recommendation/presentation/shopping_recommendation_screen.dart';
 import 'products.dart';
 import 'product_matching/domain/product_match_models.dart';
@@ -396,6 +398,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                       service:
                                           const ReceiptLineBuilderService(),
                                       elements: understandingResult.elements,
+                                      onInspectOrphanDiagnostics: (lineResult) {
+                                        Navigator.push<void>(
+                                          context,
+                                          MaterialPageRoute<void>(
+                                            builder: (_) =>
+                                                OrphanLineDiagnosticsScreen(
+                                              service:
+                                                  const OrphanLineDiagnosticsService(),
+                                              elements:
+                                                  understandingResult.elements,
+                                              lineResult: lineResult,
+                                            ),
+                                          ),
+                                        );
+                                      },
                                       onInspectExtractionBenchmark:
                                           (lineResult) {
                                         Navigator.push<void>(

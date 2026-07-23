@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 9.2A — Orphan Line Diagnostics
+
+### Read-only orphan investigation
+- Added immutable diagnostics for every orphan receipt line, including source elements, product/price/quantity availability, engine-produced row and column relationships, normalized geometry, typed rejection reasons, and non-operative recovery hints.
+- Added an Orphan Line Diagnostics screen reachable from Receipt Line debug with selectable grouping-attempt evidence.
+- Extended the Receipt Extraction Benchmark with additive recoverable, maybe-recoverable, and unrecoverable orphan counts without changing existing extraction metrics or grouping behavior.
+
 ## Phase 9.1 — Receipt Extraction Benchmark
 
 ### Read-only extraction reliability diagnostics

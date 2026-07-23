@@ -1,3 +1,5 @@
+import '../../orphan_line_diagnostics/domain/orphan_line_diagnostic.dart';
+
 enum ReceiptExtractionMissingReason {
   missingOcrText,
   headerOnly,
@@ -99,6 +101,7 @@ class ReceiptExtractionBenchmarkResult {
     required this.metrics,
     required Iterable<ReceiptExtractionMissingLine> missingLines,
     required Map<ReceiptExtractionMissingReason, int> failureBreakdown,
+    this.orphanRecoverySummary = const OrphanRecoverySummary.empty(),
   })  : missingLines = List.unmodifiable(missingLines),
         failureBreakdown = Map.unmodifiable(failureBreakdown);
 
@@ -123,6 +126,11 @@ class ReceiptExtractionBenchmarkResult {
             value! as int,
           ),
         ),
+        orphanRecoverySummary: json['orphanRecoverySummary'] == null
+            ? const OrphanRecoverySummary.empty()
+            : OrphanRecoverySummary.fromJson(
+                json['orphanRecoverySummary']! as Map<String, Object?>,
+              ),
       );
 
   final String receiptId;
@@ -130,6 +138,7 @@ class ReceiptExtractionBenchmarkResult {
   final ReceiptExtractionMetrics metrics;
   final List<ReceiptExtractionMissingLine> missingLines;
   final Map<ReceiptExtractionMissingReason, int> failureBreakdown;
+  final OrphanRecoverySummary orphanRecoverySummary;
 
   Map<String, Object?> toJson() => {
         'receiptId': receiptId,
@@ -140,5 +149,6 @@ class ReceiptExtractionBenchmarkResult {
           for (final entry in failureBreakdown.entries)
             entry.key.name: entry.value,
         },
+        'orphanRecoverySummary': orphanRecoverySummary.toJson(),
       };
 }

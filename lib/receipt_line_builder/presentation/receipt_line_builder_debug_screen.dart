@@ -18,12 +18,14 @@ class ReceiptLineBuilderDebugScreen extends StatefulWidget {
     required this.elements,
     this.onInspectCandidates,
     this.onInspectExtractionBenchmark,
+    this.onInspectOrphanDiagnostics,
   });
 
   final ReceiptLineBuilderService service;
   final List<ReceiptElement> elements;
   final ValueChanged<ReceiptLineResult>? onInspectCandidates;
   final ValueChanged<ReceiptLineResult>? onInspectExtractionBenchmark;
+  final ValueChanged<ReceiptLineResult>? onInspectOrphanDiagnostics;
 
   @override
   State<ReceiptLineBuilderDebugScreen> createState() =>
@@ -66,6 +68,13 @@ class _ReceiptLineBuilderDebugScreenState
         appBar: AppBar(
           title: const Text('Receipt line debug'),
           actions: [
+            if (_result != null && widget.onInspectOrphanDiagnostics != null)
+              IconButton(
+                key: const ValueKey('open-orphan-line-diagnostics'),
+                tooltip: 'Orphan Line Diagnostics',
+                onPressed: () => widget.onInspectOrphanDiagnostics!(_result!),
+                icon: const Icon(Icons.troubleshoot),
+              ),
             if (_result != null && widget.onInspectExtractionBenchmark != null)
               IconButton(
                 key: const ValueKey('open-receipt-extraction-benchmark'),

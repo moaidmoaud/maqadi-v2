@@ -119,6 +119,15 @@ class _ReceiptExtractionBenchmarkScreenState
               _reasonLabel(reason): '${result.failureBreakdown[reason] ?? 0}',
           },
         ),
+        _Section(
+          title: 'Orphan Recovery Summary',
+          rows: {
+            'Recoverable': '${result.orphanRecoverySummary.recoverable}',
+            'Maybe Recoverable':
+                '${result.orphanRecoverySummary.maybeRecoverable}',
+            'Unrecoverable': '${result.orphanRecoverySummary.unrecoverable}',
+          },
+        ),
         Text(
           'Missing product lines',
           style: Theme.of(context).textTheme.titleLarge,

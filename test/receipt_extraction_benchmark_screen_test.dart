@@ -66,6 +66,13 @@ void main() {
       find.byKey(const ValueKey('receipt-extraction-missing-line-orphan')),
       findsOneWidget,
     );
+    await tester.scrollUntilVisible(
+      find.text('Orphan Recovery Summary'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Orphan Recovery Summary'), findsOneWidget);
+    expect(find.text('Unrecoverable: 1'), findsOneWidget);
   });
 
   testWidgets('shows full coverage with an explicit empty missing-line state',
