@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 10.1 — Inventory Update Engine
+
+### Automatic inventory planning
+- Added a deterministic Inventory Update Engine that converts final Product Matching v2 results into add, increase, duplicate-ignore, or unknown-product actions with immutable quantity traces.
+- Added an Inventory Update Service that applies approved plans only through the existing `InventoryService` and prevents repeated receipt lines from increasing stock twice using existing movement metadata.
+- Added a read-only Inventory Update debug screen showing previous, receipt, and projected quantities, actions, reasons, and result totals without changing receipt extraction or matching behavior.
+
 ## Phase 9.3 — Reliability Gate Debug Report
 
 ### Read-only report access
