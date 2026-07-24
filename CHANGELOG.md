@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 10.2 — Receipt Commit Pipeline
+
+### Explicit inventory review and approval
+- Added an immutable receipt commit review that groups new products, quantity updates, ignored products, and unknown products with store and quantity evidence.
+- Added one-time explicit approval, reviewed-plan revalidation, cancellation, commit results, and timestamped lifecycle trace events before any inventory write.
+- Added production-facing review and read-only commit debug screens while keeping all receipt AI, matching, inventory planning, benchmark, and Reliability Gate behavior unchanged.
+
 ## Phase 10.1 — Inventory Update Engine
 
 ### Automatic inventory planning
