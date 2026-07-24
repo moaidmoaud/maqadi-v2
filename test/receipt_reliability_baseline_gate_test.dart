@@ -7,7 +7,9 @@ import 'package:maqadi_v2/receipt_benchmark/application/receipt_benchmark_runner
 import 'package:maqadi_v2/receipt_extraction_benchmark/application/receipt_extraction_benchmark_service.dart';
 import 'package:maqadi_v2/receipt_extraction_benchmark/domain/receipt_extraction_benchmark_input.dart';
 import 'package:maqadi_v2/receipt_reliability_gate/application/receipt_reliability_gate.dart';
+import 'package:maqadi_v2/receipt_reliability_gate/application/receipt_reliability_report_service.dart';
 import 'package:maqadi_v2/receipt_reliability_gate/domain/receipt_reliability_baselines.dart';
+import 'package:maqadi_v2/receipt_reliability_gate/domain/receipt_reliability_report.dart';
 import 'package:maqadi_v2/receipt_reliability_gate/domain/receipt_reliability_snapshot.dart';
 
 import 'receipt_benchmark_test_support.dart';
@@ -48,5 +50,22 @@ void main() {
       isTrue,
       reason: result.toHumanReadableReport(),
     );
+
+    final report = await const ReceiptReliabilityReportService().generate(
+      input: ReceiptExtractionBenchmarkInput(
+        receiptId: definition.receiptId,
+        ocrResult: definition.toOcrResult(),
+        understandingResult: pipeline.actualUnderstanding,
+        lineResult: pipeline.actualLines,
+      ),
+      extraction: extraction,
+    );
+    expect(
+      report.compatibility,
+      ReceiptReliabilityBaselineCompatibility.comparable,
+    );
+    expect(report.benchmarkId, 'DAN-0001');
+    expect(report.baselineId, 'DAN-0001');
+    expect(report.passed, isTrue);
   });
 }

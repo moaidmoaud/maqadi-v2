@@ -11,14 +11,9 @@ abstract final class ReceiptReliabilityBaselines {
     orphanLines: 1,
   );
 
-  static ReceiptReliabilitySnapshot dan0001ForReceipt(String receiptId) =>
-      ReceiptReliabilitySnapshot(
-        receiptId: receiptId,
-        productTextCoverage: dan0001.productTextCoverage,
-        recoveredOrphans: dan0001.recoveredOrphans,
-        remainingOrphans: dan0001.remainingOrphans,
-        completeLines: dan0001.completeLines,
-        partialLines: dan0001.partialLines,
-        orphanLines: dan0001.orphanLines,
-      );
+  static ReceiptReliabilitySnapshot? forBenchmark(String benchmarkId) =>
+      switch (benchmarkId) {
+        'DAN-0001' => dan0001,
+        _ => null,
+      };
 }

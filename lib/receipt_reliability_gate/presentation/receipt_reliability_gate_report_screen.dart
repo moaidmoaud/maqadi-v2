@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../domain/receipt_reliability_gate_result.dart';
+import '../domain/receipt_reliability_report.dart';
 
 class ReceiptReliabilityGateReportScreen extends StatelessWidget {
   const ReceiptReliabilityGateReportScreen({
@@ -8,7 +8,7 @@ class ReceiptReliabilityGateReportScreen extends StatelessWidget {
     required this.result,
   });
 
-  final ReceiptReliabilityGateResult result;
+  final ReceiptReliabilityReport result;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -23,14 +23,10 @@ class ReceiptReliabilityGateReportScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    Icon(
-                      result.passed ? Icons.check_circle : Icons.error,
-                      color: result.passed ? Colors.green : Colors.red,
-                      size: 42,
-                    ),
+                    Icon(_icon, color: _color, size: 42),
                     const SizedBox(height: 8),
                     Text(
-                      result.passed ? 'PASS' : 'FAIL',
+                      _status,
                       key: const ValueKey('receipt-reliability-gate-status'),
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
@@ -47,4 +43,21 @@ class ReceiptReliabilityGateReportScreen extends StatelessWidget {
           ],
         ),
       );
+
+  String get _status {
+    if (!result.isComparable) return 'No compatible baseline';
+    return result.passed! ? 'PASS' : 'FAIL';
+  }
+
+  IconData get _icon => !result.isComparable
+      ? Icons.info_outline
+      : result.passed!
+          ? Icons.check_circle
+          : Icons.error;
+
+  Color get _color => !result.isComparable
+      ? Colors.orange
+      : result.passed!
+          ? Colors.green
+          : Colors.red;
 }

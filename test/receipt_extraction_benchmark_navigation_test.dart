@@ -118,7 +118,7 @@ void main() {
     expect(find.text('Receipt: runtime-test'), findsOneWidget);
   });
 
-  testWidgets('opens the existing reliability comparison from the benchmark',
+  testWidgets('shows no compatible baseline for an arbitrary runtime receipt',
       (tester) async {
     final understandingResult = ReceiptUnderstandingResult(
       elements: elements,
@@ -163,35 +163,30 @@ void main() {
       find.byKey(const ValueKey('receipt-reliability-gate-inline-status')),
       findsOneWidget,
     );
-    expect(find.text('PASS'), findsOneWidget);
+    expect(find.text('No compatible baseline'), findsOneWidget);
+    expect(find.text('PASS'), findsNothing);
+    expect(find.text('FAIL'), findsNothing);
     final inlineReport = find.byKey(
       const ValueKey('receipt-reliability-gate-inline-report-text'),
     );
     expect(
       find.descendant(
         of: inlineReport,
-        matching: find.textContaining('Product Text Coverage'),
+        matching: find.textContaining('Benchmark ID: runtime-reliability-test'),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: inlineReport,
-        matching: find.textContaining('Recovered Orphans'),
+        matching: find.textContaining('Baseline ID: Not available'),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: inlineReport,
-        matching: find.textContaining('Remaining Orphans'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: inlineReport,
-        matching: find.textContaining('UNCHANGED — PASS'),
+        matching: find.textContaining('Compatibility: missingBaseline'),
       ),
       findsOneWidget,
     );
@@ -205,11 +200,18 @@ void main() {
       find.byKey(const ValueKey('receipt-reliability-gate-report-screen')),
       findsOneWidget,
     );
-    expect(find.text('PASS'), findsOneWidget);
-    expect(find.textContaining('Product Text Coverage'), findsOneWidget);
-    expect(find.textContaining('Recovered Orphans'), findsOneWidget);
-    expect(find.textContaining('Remaining Orphans'), findsOneWidget);
-    expect(find.textContaining('UNCHANGED — PASS'), findsOneWidget);
+    expect(find.text('No compatible baseline'), findsOneWidget);
+    expect(find.text('PASS'), findsNothing);
+    expect(find.text('FAIL'), findsNothing);
+    expect(
+      find.textContaining('Benchmark ID: runtime-reliability-test'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Baseline ID: Not available'), findsOneWidget);
+    expect(
+      find.textContaining('Compatibility: missingBaseline'),
+      findsOneWidget,
+    );
   });
 }
 

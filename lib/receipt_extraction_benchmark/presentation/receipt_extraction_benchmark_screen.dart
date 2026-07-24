@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../receipt_reliability_gate/application/receipt_reliability_report_service.dart';
-import '../../receipt_reliability_gate/domain/receipt_reliability_gate_result.dart';
+import '../../receipt_reliability_gate/domain/receipt_reliability_report.dart';
 import '../../receipt_reliability_gate/presentation/receipt_reliability_gate_report_screen.dart';
 import '../application/receipt_extraction_benchmark_service.dart';
 import '../domain/receipt_extraction_benchmark_input.dart';
@@ -27,7 +27,7 @@ class ReceiptExtractionBenchmarkScreen extends StatefulWidget {
 class _ReceiptExtractionBenchmarkScreenState
     extends State<ReceiptExtractionBenchmarkScreen> {
   ReceiptExtractionBenchmarkResult? _result;
-  ReceiptReliabilityGateResult? _reliabilityResult;
+  ReceiptReliabilityReport? _reliabilityResult;
   Object? _error;
   Object? _reliabilityError;
   bool _loadingReliabilityReport = false;
@@ -292,12 +292,24 @@ class _ReceiptExtractionBenchmarkScreenState
             Row(
               children: [
                 Icon(
-                  reliability.passed ? Icons.check_circle : Icons.error,
-                  color: reliability.passed ? Colors.green : Colors.red,
+                  reliability.isComparable
+                      ? reliability.passed!
+                          ? Icons.check_circle
+                          : Icons.error
+                      : Icons.info_outline,
+                  color: reliability.isComparable
+                      ? reliability.passed!
+                          ? Colors.green
+                          : Colors.red
+                      : Colors.orange,
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  reliability.passed ? 'PASS' : 'FAIL',
+                  reliability.isComparable
+                      ? reliability.passed!
+                          ? 'PASS'
+                          : 'FAIL'
+                      : 'No compatible baseline',
                   key: const ValueKey(
                     'receipt-reliability-gate-inline-status',
                   ),
