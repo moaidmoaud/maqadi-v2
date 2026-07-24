@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maqadi_v2/app_store.dart';
+import 'package:maqadi_v2/home_dashboard/application/home_dashboard_provider.dart';
 import 'package:maqadi_v2/main.dart';
 import 'package:maqadi_v2/screens/barcode_scanner_screen.dart';
 import 'package:maqadi_v2/screens/batch_management_screen.dart';
@@ -119,6 +120,10 @@ void main() {
           store: store,
           onToggleTheme: () {},
           scannerBuilder: _fakeScanner('COFFEE-123'),
+          dashboardProvider: ExistingServicesHomeDashboardProvider(
+            readAnalytics: store.dashboardAnalytics,
+            readPurchaseHistory: () async => const [],
+          ),
         ),
       ),
     );
@@ -137,6 +142,10 @@ void main() {
           store: store,
           onToggleTheme: () {},
           scannerBuilder: _fakeScanner(qrPayload),
+          dashboardProvider: ExistingServicesHomeDashboardProvider(
+            readAnalytics: store.dashboardAnalytics,
+            readPurchaseHistory: () async => const [],
+          ),
         ),
       ),
     );

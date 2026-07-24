@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maqadi_v2/app_store.dart';
+import 'package:maqadi_v2/home_dashboard/application/home_dashboard_provider.dart';
 import 'package:maqadi_v2/main.dart';
 import 'package:maqadi_v2/models/inventory_models.dart';
 import 'package:maqadi_v2/models/shopping_models.dart';
@@ -156,13 +157,27 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: HomeScreen(store: store, onToggleTheme: () {}),
+        home: HomeScreen(
+          store: store,
+          onToggleTheme: () {},
+          dashboardProvider: ExistingServicesHomeDashboardProvider(
+            readAnalytics: store.dashboardAnalytics,
+            readPurchaseHistory: () async => const [],
+          ),
+        ),
       ),
     );
+    await tester.pumpAndSettle();
 
     expect(find.text('مخزون منخفض'), findsOneWidget);
-    expect(find.text('نفد المخزون'), findsOneWidget);
-    expect(find.text('عناصر قائمة التسوق'), findsOneWidget);
+    expect(find.text('قائمة التسوق'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('dashboard-shopping-list')),
+        matching: find.text('2'),
+      ),
+      findsOneWidget,
+    );
     store.dispose();
   });
 }

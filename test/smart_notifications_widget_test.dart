@@ -51,7 +51,7 @@ void main() {
     store.dispose();
   });
 
-  testWidgets('dashboard shows the pending notification summary', (
+  testWidgets('home dashboard keeps notification settings accessible', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1800));
@@ -89,13 +89,13 @@ void main() {
         ),
       ),
     );
+    await tester.tap(find.byTooltip('الإعدادات'));
+    await tester.pumpAndSettle();
 
     expect(
-      find.byKey(const ValueKey('dashboard-notification-summary')),
+      find.byKey(const ValueKey('notification-settings-card')),
       findsOneWidget,
     );
-    expect(find.textContaining('1 إشعار معلق'), findsOneWidget);
-    expect(find.textContaining('منخفض 1'), findsOneWidget);
     store.dispose();
   });
 }

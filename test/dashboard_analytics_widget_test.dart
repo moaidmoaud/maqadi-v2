@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maqadi_v2/app_store.dart';
+import 'package:maqadi_v2/home_dashboard/application/home_dashboard_provider.dart';
 import 'package:maqadi_v2/main.dart';
 import 'package:maqadi_v2/models/inventory_models.dart';
 import 'package:maqadi_v2/models/shopping_models.dart';
@@ -8,7 +9,7 @@ import 'package:maqadi_v2/repositories/app_repository.dart';
 import 'package:maqadi_v2/services/inventory_service.dart';
 
 void main() {
-  testWidgets('dashboard renders summaries, actions, insights, and charts', (
+  testWidgets('production home renders the six primary dashboard cards', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 2400));
@@ -16,116 +17,82 @@ void main() {
     final fixture = _dashboardFixture();
 
     await tester.pumpWidget(_DashboardHost(store: fixture.store));
+    await tester.pumpAndSettle();
 
-    for (final title in [
-      'إجمالي المنتجات',
-      'إجمالي الدفعات',
-      'إجمالي الكمية',
+    for (final title in const [
+      'المخزون',
+      'قائمة التسوق',
       'مخزون منخفض',
-      'نفد المخزون',
-      'قريب الانتهاء',
-      'منتهي الصلاحية',
-      'عناصر قائمة التسوق',
+      'التوفير الشهري',
+      'آخر إيصال',
+      'التقاط إيصال',
     ]) {
       expect(find.text(title), findsOneWidget);
     }
-    for (final action in ['إضافة منتج', 'قائمة التسوق', 'إدارة الدفعات']) {
-      expect(find.text(action), findsOneWidget);
-    }
-    expect(find.byKey(const ValueKey('dashboard-chart-stock')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('dashboard-chart-expiry')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('dashboard-chart-category')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('dashboard-insight-top')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('dashboard-insight-lowest')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('dashboard-insight-updated')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('dashboard-insight-added')),
-      findsOneWidget,
-    );
     fixture.store.dispose();
   });
 
-  testWidgets('global dashboard search finds a batch and opens its product', (
+  testWidgets('inventory dashboard card opens the production pantry', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final fixture = _dashboardFixture();
     await tester.pumpWidget(_DashboardHost(store: fixture.store));
+    await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byKey(const ValueKey('dashboard-global-search')),
-      'milk-lot-7',
-    );
-    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('dashboard-inventory')));
+    await tester.pumpAndSettle();
+    expect(find.text('مخزن المنزل'), findsOneWidget);
+    expect(find.text('حليب'), findsOneWidget);
+    fixture.store.dispose();
+  });
 
-    final result = find.byKey(ValueKey('dashboard-search-${fixture.milk.id}'));
-    expect(result, findsOneWidget);
+  testWidgets('dashboard summary refreshes after an inventory change', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final fixture = _dashboardFixture();
+    await tester.pumpWidget(_DashboardHost(store: fixture.store));
+    await tester.pumpAndSettle();
+
     expect(
       find.descendant(
-        of: result,
-        matching: find.textContaining('milk-lot-7'),
+        of: find.byKey(const ValueKey('dashboard-low-stock')),
+        matching: find.text('1'),
       ),
       findsOneWidget,
     );
-
-    await tester.tap(result);
-    await tester.pumpAndSettle();
-    expect(find.text('دفعات حليب'), findsOneWidget);
-    fixture.store.dispose();
-  });
-
-  testWidgets('dashboard summary updates after an inventory change', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1000, 1800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final fixture = _dashboardFixture();
-    await tester.pumpWidget(_DashboardHost(store: fixture.store));
-
-    expect(find.text('3 منتج'), findsOneWidget);
-    expect(find.text('11'), findsOneWidget);
 
     fixture.store.changePantryQuantity(fixture.milk, 2);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(find.text('13'), findsOneWidget);
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey('dashboard-summary-low')),
-        matching: find.text('0 منتج'),
+        of: find.byKey(const ValueKey('dashboard-low-stock')),
+        matching: find.text('0'),
       ),
       findsOneWidget,
     );
     fixture.store.dispose();
   });
 
-  testWidgets('batch management quick action opens the product picker', (
+  testWidgets('low-stock dashboard card opens the read-only outlook', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 2400));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final fixture = _dashboardFixture();
     await tester.pumpWidget(_DashboardHost(store: fixture.store));
+    await tester.pumpAndSettle();
 
-    final action = find.byKey(const ValueKey('dashboard-action-batches'));
+    final action = find.byKey(const ValueKey('dashboard-low-stock'));
     await tester.ensureVisible(action);
     await tester.tap(action);
     await tester.pumpAndSettle();
 
-    expect(find.text('اختر منتجًا لإدارة دفعاته'), findsOneWidget);
+    expect(find.text('Low stock outlook'), findsOneWidget);
     fixture.store.dispose();
   });
 }
@@ -141,7 +108,14 @@ class _DashboardHost extends StatelessWidget {
           textDirection: TextDirection.rtl,
           child: ListenableBuilder(
             listenable: store,
-            builder: (_, __) => HomeScreen(store: store, onToggleTheme: () {}),
+            builder: (_, __) => HomeScreen(
+              store: store,
+              onToggleTheme: () {},
+              dashboardProvider: ExistingServicesHomeDashboardProvider(
+                readAnalytics: store.dashboardAnalytics,
+                readPurchaseHistory: () async => const [],
+              ),
+            ),
           ),
         ),
       );

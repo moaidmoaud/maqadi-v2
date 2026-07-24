@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maqadi_v2/app_store.dart';
-import 'package:maqadi_v2/main.dart';
 import 'package:maqadi_v2/models/expiry_models.dart';
 import 'package:maqadi_v2/models/inventory_models.dart';
 import 'package:maqadi_v2/screens/expiry_list_screen.dart';
@@ -116,7 +115,7 @@ void main() {
     expect(find.text('دفعات حليب'), findsOneWidget);
   });
 
-  testWidgets('expired screen and dashboard show service-owned counts', (
+  testWidgets('expired screen shows service-owned counts', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1000, 2000);
@@ -153,18 +152,6 @@ void main() {
     expect(find.text('منتهي الصلاحية'), findsOneWidget);
     expect(find.text('جبن'), findsOneWidget);
     expect(find.text('لبن'), findsNothing);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Directionality(
-          textDirection: TextDirection.rtl,
-          child: HomeScreen(store: store, onToggleTheme: () {}),
-        ),
-      ),
-    );
-    expect(find.text('قريب الانتهاء'), findsOneWidget);
-    expect(find.text('منتهي الصلاحية'), findsOneWidget);
-    expect(find.text('1 دفعة'), findsNWidgets(2));
   });
 }
 

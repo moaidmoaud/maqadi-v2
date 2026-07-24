@@ -1,5 +1,12 @@
 # سجل التغييرات
 
+## Phase 10.3 — Home Dashboard
+
+### Household overview
+- Added a production home dashboard with exactly six primary cards for inventory, shopping, low stock, monthly savings, the latest receipt, and receipt capture.
+- Connected available cards to existing production services and destinations while keeping monthly savings behind a replaceable placeholder provider.
+- Added clear zero-data states and consumer-focused navigation without exposing receipt diagnostics, ranking, confidence, OCR, benchmark, or Reliability Gate details.
+
 ## Phase 10.2 — Receipt Commit Pipeline
 
 ### Explicit inventory review and approval

@@ -6,10 +6,11 @@ import 'package:flutter/material.dart';
 
 import 'app_store.dart';
 import 'consumption/presentation/consumption_screen.dart';
+import 'home_dashboard/application/home_dashboard_provider.dart';
+import 'home_dashboard/presentation/home_dashboard_screen.dart';
 import 'inventory_health/presentation/inventory_health_screen.dart';
 import 'low_stock/presentation/low_stock_screen.dart';
 import 'models/barcode_models.dart';
-import 'models/expiry_models.dart';
 import 'models/inventory_models.dart';
 import 'models/shopping_models.dart';
 import 'models/stock_models.dart';
@@ -40,13 +41,11 @@ import 'receipt_import/application/receipt_import_service.dart';
 import 'receipt_import/presentation/receipt_review_screen.dart';
 import 'screens/batch_management_screen.dart';
 import 'screens/barcode_scanner_screen.dart';
-import 'screens/expiry_list_screen.dart';
 import 'screens/purchase_list_screen.dart';
 import 'screens/receipt_capture_screen.dart';
 import 'screens/reports_screen.dart';
 import 'services/receipt_capture_service.dart';
 import 'utils/arabic_text.dart';
-import 'widgets/dashboard_analytics_panel.dart';
 import 'widgets/notification_settings_card.dart';
 import 'widgets/stock_status_badge.dart';
 
@@ -117,50 +116,29 @@ class HomeScreen extends StatefulWidget {
     required this.store,
     required this.onToggleTheme,
     this.scannerBuilder,
+    this.dashboardProvider,
   });
 
   final AppStore store;
   final VoidCallback onToggleTheme;
   final BarcodeScannerBuilder? scannerBuilder;
+  final HomeDashboardProvider? dashboardProvider;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  bool showArchived = false;
+  late final HomeDashboardProvider _dashboardProvider;
 
-  Future<String?> _askName(BuildContext context, {String initial = ''}) async {
-    final controller = TextEditingController(text: initial);
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(initial.isEmpty ? 'قائمة جديدة' : 'إعادة تسمية القائمة'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'مثال: مقاضي البيت'),
-          onSubmitted: (value) => Navigator.pop(context, value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('حفظ'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _createList() async {
-    final name = await _askName(context);
-    if (!mounted || name == null) return;
-    final list = widget.store.createList(name);
-    _openList(list);
+  @override
+  void initState() {
+    super.initState();
+    _dashboardProvider = widget.dashboardProvider ??
+        ExistingServicesHomeDashboardProvider(
+          readAnalytics: widget.store.dashboardAnalytics,
+          readPurchaseHistory: widget.store.purchaseService.searchPurchases,
+        );
   }
 
   void _openList(ShoppingListModel list, {StockStatus? initialStockFilter}) {
@@ -182,9 +160,42 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openCurrentList([StockStatus? stockFilter]) {
     final list = widget.store.lastList;
-    if (list == null) return;
+    if (list == null) {
+      _openPlaceholder(
+        title: 'قائمة التسوق',
+        message: 'أنشئ قائمة تسوق لعرض المنتجات المعلقة.',
+      );
+      return;
+    }
     _openList(list, initialStockFilter: stockFilter);
   }
+
+  void _openLowStockDashboard() => Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: LowStockScreen(
+              service: widget.store.lowStockService,
+              onOpenProduct: (productId) {
+                final item = widget.store.pantryItemById(productId);
+                if (item != null) _openProduct(item);
+              },
+            ),
+          ),
+        ),
+      );
+
+  void _openPlaceholder({required String title, required String message}) =>
+      Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: DashboardPlaceholderScreen(title: title, message: message),
+          ),
+        ),
+      );
 
   void _openPantry({bool addProduct = false, String? initialBarcode}) {
     Navigator.push(
@@ -198,18 +209,6 @@ class _HomeScreenState extends State<HomeScreen> {
             initialBarcode: initialBarcode,
             scannerBuilder: widget.scannerBuilder,
           ),
-        ),
-      ),
-    );
-  }
-
-  void _openExpiry(BatchExpiryStatus status) {
-    Navigator.push(
-      context,
-      MaterialPageRoute<void>(
-        builder: (_) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: ExpiryListScreen(store: widget.store, status: status),
         ),
       ),
     );
@@ -230,41 +229,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _openBatchManagement() async {
-    final items = widget.store.pantryItems();
-    if (items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('أضف منتجًا إلى المخزن أولًا')),
-      );
-      return;
-    }
-    final selected = await showModalBottomSheet<PantryItem>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            const ListTile(
-              title: Text(
-                'اختر منتجًا لإدارة دفعاته',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-            for (final item in items)
-              ListTile(
-                leading: const Icon(Icons.layers_outlined),
-                title: Text(item.name),
-                subtitle: Text(item.category),
-                onTap: () => Navigator.pop(context, item),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (selected != null && mounted) _openProduct(selected);
   }
 
   Future<void> _scanInventoryCode() async {
@@ -305,27 +269,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _openPantry(addProduct: true, initialBarcode: result.rawValue);
         }
     }
-  }
-
-  Future<void> _confirmDelete(ShoppingListModel list) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('حذف القائمة؟'),
-        content: Text('سيتم حذف "${list.name}" نهائيًا.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('حذف'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) widget.store.deleteList(list);
   }
 
   void _openSettings() => Navigator.push(
@@ -517,11 +460,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final last = widget.store.lastList;
-    final analytics = widget.store.dashboardAnalytics();
-    final visibleLists =
-        showArchived ? widget.store.archivedLists : widget.store.activeLists;
-
+    final summary = widget.store.dashboardAnalytics().summary;
+    final refreshToken = Object.hash(
+      summary.totalProducts,
+      summary.lowStock,
+      summary.shoppingListItems,
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -564,270 +508,21 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _createList,
-        icon: const Icon(Icons.add),
-        label: const Text('قائمة جديدة'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-        children: [
-          if (last != null)
-            Card(
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () => _openList(last),
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primaryContainer,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Icon(
-                              Icons.shopping_cart_checkout,
-                              size: 30,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'آخر قائمة',
-                                  style: TextStyle(fontSize: 13),
-                                ),
-                                Text(
-                                  last.name,
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      LinearProgressIndicator(
-                        value: last.progress,
-                        minHeight: 10,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'تم ${last.completedCount} من ${last.items.length} • المتبقي ${last.remainingCount}',
-                      ),
-                      const SizedBox(height: 14),
-                      FilledButton.icon(
-                        onPressed: () => _openList(last),
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('بدء التسوق'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _QuickCard(
-                  icon: Icons.star_outline,
-                  title: 'المفضلة',
-                  subtitle: '${widget.store.favorites.length} منتج',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => Directionality(
-                        textDirection: TextDirection.rtl,
-                        child: FavoritesScreen(store: widget.store),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _QuickCard(
-                  icon: Icons.bar_chart_outlined,
-                  title: 'الإحصائيات',
-                  subtitle: '${widget.store.lists.length} قائمة',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => Directionality(
-                        textDirection: TextDirection.rtl,
-                        child: StatisticsScreen(store: widget.store),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          DashboardAnalyticsPanel(
-            analytics: analytics,
-            onSearch: widget.store.searchDashboard,
-            onOpenProduct: _openProduct,
-            onPantry: _openPantry,
-            onAddProduct: () => _openPantry(addProduct: true),
-            onShoppingList: () => _openCurrentList(),
-            onLowStock: () => _openCurrentList(StockStatus.lowStock),
-            onOutOfStock: () => _openCurrentList(StockStatus.outOfStock),
-            onExpiringSoon: () => _openExpiry(BatchExpiryStatus.expiringSoon),
-            onExpired: () => _openExpiry(BatchExpiryStatus.expired),
-            onBatchManagement: _openBatchManagement,
-            notificationSummary: widget.store.notificationSummary,
-            onNotifications: _openSettings,
-          ),
-          const SizedBox(height: 22),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                showArchived ? 'القوائم المؤرشفة' : 'قوائمي',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () => setState(() => showArchived = !showArchived),
-                icon: Icon(
-                  showArchived ? Icons.list_alt : Icons.archive_outlined,
-                ),
-                label: Text(showArchived ? 'عرض النشطة' : 'المؤرشفة'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (visibleLists.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Column(
-                  children: [
-                    Icon(Icons.inbox_outlined, size: 52),
-                    SizedBox(height: 8),
-                    Text('لا توجد قوائم هنا'),
-                  ],
-                ),
-              ),
-            ),
-          ...visibleLists.map(
-            (list) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Card(
-                clipBehavior: Clip.antiAlias,
-                child: ListTile(
-                  onTap: () => _openList(list),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  leading: CircleAvatar(child: Text('${list.remainingCount}')),
-                  title: Text(
-                    list.name,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: LinearProgressIndicator(
-                      value: list.progress,
-                      minHeight: 6,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                  ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) async {
-                      if (value == 'rename') {
-                        final name = await _askName(
-                          context,
-                          initial: list.name,
-                        );
-                        if (name != null) widget.store.renameList(list, name);
-                      } else if (value == 'copy') {
-                        final copy = widget.store.duplicateList(list);
-                        _openList(copy);
-                      } else if (value == 'archive') {
-                        widget.store.archiveList(list, !list.archived);
-                      } else if (value == 'delete') {
-                        _confirmDelete(list);
-                      }
-                    },
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(
-                        value: 'rename',
-                        child: Text('إعادة تسمية'),
-                      ),
-                      if (!list.archived)
-                        const PopupMenuItem(
-                          value: 'copy',
-                          child: Text('نسخ القائمة'),
-                        ),
-                      PopupMenuItem(
-                        value: 'archive',
-                        child: Text(list.archived ? 'إلغاء الأرشفة' : 'أرشفة'),
-                      ),
-                      const PopupMenuItem(value: 'delete', child: Text('حذف')),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
+      body: HomeDashboardScreen(
+        provider: _dashboardProvider,
+        refreshToken: refreshToken,
+        onInventory: _openPantry,
+        onShoppingList: _openCurrentList,
+        onLowStock: _openLowStockDashboard,
+        onMonthlySavings: () => _openPlaceholder(
+          title: 'التوفير الشهري',
+          message: 'سيكون ملخص التوفير الشهري متاحًا في تحديث قادم.',
+        ),
+        onLastReceipt: _openPurchases,
+        onCaptureReceipt: _openReceiptCapture,
       ),
     );
   }
-}
-
-class _QuickCard extends StatelessWidget {
-  const _QuickCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(icon),
-                const SizedBox(height: 12),
-                Text(title,
-                    style: const TextStyle(fontWeight: FontWeight.w800)),
-                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-          ),
-        ),
-      );
 }
 
 class PantryScreen extends StatefulWidget {
